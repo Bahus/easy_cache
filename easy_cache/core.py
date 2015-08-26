@@ -4,14 +4,14 @@ import threading
 import logging
 import inspect
 from time import time
+import collections
 
 import os
 import six
-import collections
 from .utils import get_function_path
 
 
-logger = logging.getLogger('easy_cache.core')
+logger = logging.getLogger(__name__)
 
 
 def force_text(obj):
@@ -33,19 +33,24 @@ def force_binary(obj):
         return obj.encode('utf-8')
 
 
-class DefaultValue(object):
+class Value(object):
+
+    def __init__(self, name):
+        self.name = name
 
     def __repr__(self):
-        return 'DEFAULT'
+        return self.name
 
 
-NOT_FOUND = object()
-DEFAULT_TIMEOUT = DefaultValue()
+NOT_FOUND = Value('NOT_FOUND')
+NOT_SET = Value('NOT_SET')
+DEFAULT_TIMEOUT = Value('DEFAULT_TIMEOUT')
 CACHE_KEY_DELIMITER = force_text(':')
 TAG_KEY_PREFIX = force_text('tag')
+RETURN_VALUE_PARAM_NAME = 'returned_value'
 
 LAZY_MODE = os.environ.get('CACHE_TOOLS_LAZY_MODE_ENABLE', '') == 'yes'
-DEFAULT_CACHE_ALIAS = 'global-cache-tools'
+DEFAULT_CACHE_ALIAS = 'default-cache-tools'
 
 
 class CacheHandler(object):
@@ -157,8 +162,33 @@ def get_timestamp():
 def hash_dict(dictionary):
     """
         http://stackoverflow.com/questions/5884066/hashing-a-python-dictionary
+        works only for hashable items in dict
     """
     return hash(frozenset(dictionary.items()))
+
+
+class MetaCallable(collections.Mapping):
+    """ Object contains meta information about method or function decorated with ecached,
+        passed arguments, returned results, signature description and so on.
+    """
+    def __init__(self, args=(), kwargs=None, returned_value=NOT_SET, call_args=None):
+        self.args = args
+        self.kwargs = kwargs or {}
+        self.returned_value = returned_value
+        self.call_args = call_args or {}
+
+    def __iter__(self):
+        return iter(self.call_args)
+
+    def __len__(self):
+        return len(self.call_args)
+
+    def __getitem__(self, item):
+        return self.call_args[item]
+
+    @property
+    def has_returned_value(self):
+        return self.returned_value is not NOT_SET
 
 
 class TaggedCacheProxy(object):
@@ -280,13 +310,14 @@ class Cached(object):
     cache_instance = property(_get_cache_instance)
 
     def __call__(self, *args, **kwargs):
-        args, kwargs = self.update_arguments(args, kwargs)
-        cache_key = self.generate_cache_key_from_args(*args, **kwargs)
+        callable_meta = self.collect_meta(args, kwargs)
+        cache_key = self.generate_cache_key(callable_meta)
         cached_value = self.get_cached_value(cache_key)
 
         if cached_value is NOT_FOUND:
-            value = self.function(*args, **kwargs)
-            self.set_cached_value(cache_key, value)
+            value = self.function(*callable_meta.args, **callable_meta.kwargs)
+            callable_meta.returned_value = value
+            self.set_cached_value(cache_key, callable_meta)
             return value
 
         return cached_value
@@ -298,7 +329,10 @@ class Cached(object):
 
         args = list(args)
         if scope:
-            args.remove(scope)
+            try:
+                args.remove(scope)
+            except ValueError:
+                pass
 
         for k in sorted(kwargs):
             args.append(kwargs[k])
@@ -329,50 +363,79 @@ class Cached(object):
         return self
 
     def get_cached_value(self, cache_key):
+        logger.debug('Get cache_key="%s"', cache_key)
         return self.cache_instance.get(cache_key, NOT_FOUND)
 
-    def set_cached_value(self, cache_key, value, **kwargs):
+    def set_cached_value(self, cache_key, callable_meta, **extra):
         if self.timeout is not DEFAULT_TIMEOUT:
-            kwargs['timeout'] = self.timeout
+            extra['timeout'] = self.timeout
 
-        self.cache_instance.set(cache_key, value, **kwargs)
+        logger.debug('Set cache_key="%s"', cache_key)
+        self.cache_instance.set(cache_key, callable_meta.returned_value, **extra)
 
-    def _format_template_from_args(self, template, *args, **kwargs):
+    @staticmethod
+    def _check_if_meta_required(callable_template):
+        arg_spec = inspect.getargspec(callable_template)
+        if arg_spec.varargs is None and arg_spec.keywords is None and len(arg_spec.args) == 1:
+            return True
+        elif arg_spec.varargs and arg_spec.keywords:
+            return False
+        raise TypeError('Invalid signature for "%s", must be one of '
+                        '"func(meta)" or "func(*args, **kwargs)"' % callable_template)
+
+    def _format(self, template, meta):
+        if isinstance(template, (staticmethod, classmethod)):
+            template = template.__func__
+
         if isinstance(template, collections.Callable):
-            # default arguments are also passed to template function
-            _args, _, _, defaults = inspect.getargspec(self.function)
-            diff_count = len(_args) - len(args)
-
-            # do not provide default arguments which were already passed
-            if diff_count > 0:
-                default_kwargs = dict(zip(reversed(_args[-diff_count:]),
-                                          reversed(defaults)))
-                default_kwargs.update(kwargs)
+            if self._check_if_meta_required(template):
+                return template(meta)
             else:
-                default_kwargs = {}
-            return template(*args, **default_kwargs)
+                return template(*meta.args, **meta.kwargs)
 
         if not self.function:
             return template
 
-        call_args = inspect.getcallargs(self.function, *args, **kwargs)
-
         if isinstance(template, six.string_types):
-            template = force_text(template)
-            return template.format(**call_args)
+            return force_text(template).format(**meta.call_args)
         elif isinstance(template, (list, tuple, set)):
-            return [force_text(t).format(**call_args) for t in template]
+            return [force_text(t).format(**meta.call_args) for t in template]
 
         raise TypeError(
             'Unsupported type for key template: {!r}'.format(type(template))
         )
 
-    def generate_cache_key_from_args(self, *args, **kwargs):
-        return self._format_template_from_args(self.cache_key, *args, **kwargs)
+    def collect_meta(self, args, kwargs, returned_value=NOT_SET):
+        """ :returns: MetaCallable """
+        args, kwargs = self.update_arguments(args, kwargs)
+
+        meta = MetaCallable(args=args, kwargs=kwargs, returned_value=returned_value)
+
+        if not self.function:
+            return meta
+
+        # default arguments are also passed to template function
+        arg_spec = inspect.getargspec(self.function)
+        diff_count = len(arg_spec.args) - len(args)
+
+        # do not provide default arguments which were already passed
+        if diff_count > 0:
+            default_kwargs = dict(zip(arg_spec.args[-diff_count:],
+                                      arg_spec.defaults[-diff_count:]))
+        else:
+            default_kwargs = {}
+
+        default_kwargs.update(kwargs)
+        meta.kwargs = default_kwargs
+        meta.call_args = inspect.getcallargs(self.function, *args, **kwargs)
+        return meta
+
+    def generate_cache_key(self, callable_meta):
+        return self._format(self.cache_key, callable_meta)
 
     def invalidate_cache_by_args(self, *args, **kwargs):
-        args, kwargs = self.update_arguments(args, kwargs)
-        cache_key = self.generate_cache_key_from_args(*args, **kwargs)
+        callable_meta = self.collect_meta(args, kwargs)
+        cache_key = self.generate_cache_key(callable_meta)
         return self.cache_instance.delete(cache_key)
 
     def __unicode__(self):
@@ -423,8 +486,6 @@ class TaggedCached(Cached):
         if self._cache_instance:
             self._cache_instance = TaggedCacheProxy(self.cache_instance)
 
-        self._tags = []
-
     if LAZY_MODE:
         @property
         def cache_instance(self):
@@ -438,70 +499,52 @@ class TaggedCached(Cached):
                 self._cache_instance = TaggedCacheProxy(caches[self._cache_alias])
             return self._cache_instance
 
-    @property
-    def processed_tags(self):
-        tags = self._tags
-        self._tags = []
-        return tags
-
-    @processed_tags.setter
-    def processed_tags(self, value):
-        self._tags = value
-
-    def update_tags(self, prefix, *args, **kwargs):
-        tags = self._format_template_from_args(self.tags, *args, **kwargs)
-
-        if prefix:
-            tags = set(tags) | {prefix}
-
-        self.processed_tags = tags
-
     def invalidate_cache_by_tags(self, tags=(), *args, **kwargs):
         """ Invalidate cache for this method or property by one of provided tags
             :type tags: str | list | tuple | callable
         """
         if not self.tags:
-            raise TypeError('Tags were not specified, nothing to invalidate')
+            raise ValueError('Tags were not specified, nothing to invalidate')
 
         def to_set(obj):
             return set([obj] if isinstance(obj, six.string_types) else obj)
 
-        args, kwargs = self.update_arguments(args, kwargs)
-        all_tags = to_set(self._format_template_from_args(self.tags, *args, **kwargs))
+        callable_meta = self.collect_meta(args, kwargs)
+        all_tags = to_set(self._format(self.tags, callable_meta))
 
         if not tags:
             tags = all_tags
         else:
-            tags = (
-                to_set(self._format_template_from_args(tags, *args, **kwargs)) &
-                all_tags
-            )
+            tags = to_set(self._format(tags, callable_meta))
+            if all_tags:
+                tags = tags & all_tags
 
         return self.cache_instance.invalidate(tags)
 
     def invalidate_cache_by_prefix(self, *args, **kwargs):
         if not self.prefix:
-            raise TypeError('Prefix was not specified, nothing to invalidate')
+            raise ValueError('Prefix was not specified, nothing to invalidate')
 
-        args, kwargs = self.update_arguments(args, kwargs)
-        prefix = self._format_template_from_args(self.prefix, *args, **kwargs)
+        callable_meta = self.collect_meta(args, kwargs)
+        prefix = self._format(self.prefix, callable_meta)
         return self.cache_instance.invalidate([prefix])
 
-    def set_cached_value(self, cache_key, value, **kwargs):
-        return super(TaggedCached, self).set_cached_value(cache_key, value,
-                                                          tags=self.processed_tags)
+    def generate_cache_key(self, callable_meta):
+        cache_key = super(TaggedCached, self).generate_cache_key(callable_meta)
+        if self.prefix:
+            prefix = self._format(self.prefix, callable_meta)
+            cache_key = create_cache_key(prefix, cache_key)
+        return cache_key
 
-    def generate_cache_key_from_args(self, *args, **kwargs):
-        cache_key = super(TaggedCached, self).generate_cache_key_from_args(*args, **kwargs)
+    def set_cached_value(self, cache_key, callable_meta, **extra):
+        # generate tags and prefix only after successful execution
+        tags = self._format(self.tags, callable_meta)
 
         if self.prefix:
-            prefix = self._format_template_from_args(self.prefix, *args, **kwargs)
-            cache_key = create_cache_key(prefix, cache_key)
-        else:
-            prefix = None
+            prefix = self._format(self.prefix, callable_meta)
+            tags = set(tags) | {prefix}
 
-        self.update_tags(prefix, *args, **kwargs)
-        return cache_key
+        return super(TaggedCached, self).set_cached_value(cache_key, callable_meta, tags=tags)
 
     def __unicode__(self):
         return six.text_type(

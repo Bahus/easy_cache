@@ -2,12 +2,13 @@
 import sys
 import logging
 from unittest import TestCase
-
 import collections
-import os
 import random
-from mock import Mock
 from functools import partial
+
+import os
+from mock import Mock
+
 
 
 # to make testing easy
@@ -28,6 +29,7 @@ from easy_cache.core import (
     create_cache_key,
     create_tag_cache_key,
     DEFAULT_TIMEOUT,
+    MetaCallable,
 )
 
 
@@ -220,8 +222,8 @@ class CacheProxy(object):
         return 'ThreadLocalCache {}'.format(name)
 
 
-def custom_cache_key(self, *args, **kwargs):
-    return create_cache_key('my_prefix', self.id, *args)
+def custom_cache_key(*args, **kwargs):
+    return create_cache_key('my_prefix', args[0].id, *args[1:])
 
 
 def process_args(*args, **kwargs):
@@ -280,8 +282,15 @@ class User(object):
     def instance_method_tags(self, a, b, c=14):
         return get_test_result(a, b, c)
 
-    def generate_custom_tags(self, *args, **kwargs):
-        return [create_cache_key(self.name, self.id, args[0]), 'simple_tag']
+    @staticmethod
+    def generate_custom_tags(meta):
+        """ :type meta: MetaCallable """
+        if meta.has_returned_value:
+            cache_mock.assert_called_with(meta.returned_value)
+
+        self = meta.args[0]
+        a = meta.args[1]
+        return [create_cache_key(self.name, self.id, a), 'simple_tag']
 
     @ecached('{a}:{b}', tags=generate_custom_tags)
     def instance_method_custom_tags(self, a, b, c=14):
@@ -307,7 +316,7 @@ class User(object):
         return get_test_result(a, b, c)
 
     @ecached(('cls.name', 'a'), 500, ['tag4', 'tag5:{cls.name}'],
-             prefix=lambda cls, a, b, c: create_cache_key('USER', a, b))
+             prefix=lambda cls, *args, **kwargs: create_cache_key('USER', args[0], args[1]))
     @classmethod
     def class_method_full_spec(cls, a, b, c=18):
         return get_test_result(a, b, c)
@@ -366,7 +375,7 @@ class ClassCachedDecoratorTest(TestCase):
         self.cache.assert_called_once_with(result)
         self.cache.reset_mock()
 
-        # cached version (force covert to unicode)
+        # cached version (force convert to unicode)
         self.assertEqual(force_text(method(a, b, c)), force_text(result))
         self.assertFalse(self.cache.called)
         self.cache.reset_mock()
@@ -505,6 +514,21 @@ class ClassCachedDecoratorTest(TestCase):
 
         self._check_cache_key(cache_callable, cache_key)
 
+        self.local_cache.clear()
+        self.cache.reset_mock()
+
+        self.assertEqual(self.user.test_property, 'property')
+        self.cache.assert_called_once_with('property')
+
+        self.cache.reset_mock()
+        self.assertEqual(self.user.test_property, 'property')
+        self.assertFalse(self.cache.called)
+
+        # invalidate cache
+        User.test_property.invalidate_cache_by_args()
+        self.assertEqual(self.user.test_property, 'property')
+        self.cache.assert_called_once_with('property')
+
     def test_cache_key_as_string(self):
         cache_callable = self.user.instance_method_string
         cache_key = create_cache_key(self.user.id, 1, 2, 3)
@@ -563,7 +587,7 @@ class ClassCachedDecoratorTest(TestCase):
     def test_cache_custom_tags(self):
         cache_callable = self.user.instance_method_custom_tags
         cache_key = create_cache_key(10, 11)
-        cache_tags = self.user.generate_custom_tags(10)
+        cache_tags = self.user.generate_custom_tags(MetaCallable(args=(self.user, 10)))
 
         self._check_cache_key(cache_callable, cache_key, 10, 11)
         self._check_tags(cache_callable, cache_tags, 10, 11)
@@ -816,7 +840,7 @@ class MiscellaneousTest(TestCase):
             repr(User.class_method_default_cache_key),
             '<Cached: '
             'callable="' + __name__ + '.User.class_method_default_cache_key", '
-            'cache_key="easy_cache.core.Cached.create_cache_key", timeout=DEFAULT>'
+            'cache_key="easy_cache.core.Cached.create_cache_key", timeout=DEFAULT_TIMEOUT>'
         )
 
         self.assertEqual(
@@ -824,14 +848,14 @@ class MiscellaneousTest(TestCase):
             '<TaggedCached: '
             'callable="' + __name__ + '.User.static_method", '
             'cache_key="{hg}:{hg}:{test}", tags="()", '
-            'prefix="пользователь", timeout=DEFAULT>'
+            'prefix="пользователь", timeout=DEFAULT_TIMEOUT>'
         )
 
         self.assertEqual(
             repr(User.property_no_tags),
             '<Cached: '
             'callable="' + __name__ + '.User.property_no_tags", '
-            'cache_key="static_key", timeout=DEFAULT>'
+            'cache_key="static_key", timeout=DEFAULT_TIMEOUT>'
         )
 
         # TODO: incorrect generate_custom_tags qualname
@@ -840,7 +864,7 @@ class MiscellaneousTest(TestCase):
             '<TaggedCached: '
             'callable="' + __name__ + '.User.instance_method_custom_tags", '
             'cache_key="{a}:{b}", tags="' + __name__ + '.generate_custom_tags", '
-            'prefix="None", timeout=DEFAULT>'
+            'prefix="None", timeout=DEFAULT_TIMEOUT>'
         )
 
         self.assertEqual(
@@ -848,5 +872,5 @@ class MiscellaneousTest(TestCase):
             '<TaggedCached: '
             'callable="' + __name__ + '.ordinal_func", '
             'cache_key="{kwargs[a]}:{kwargs[b]}", tags="()", '
-            'prefix="пользователь", timeout=DEFAULT>'
+            'prefix="пользователь", timeout=DEFAULT_TIMEOUT>'
         )

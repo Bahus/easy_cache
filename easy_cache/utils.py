@@ -9,12 +9,17 @@ def get_function_path(function, bound_to=None):
     if isinstance(function, six.string_types):
         return function
 
-    if not callable(function):
+    # static and class methods
+    if hasattr(function, '__func__'):
+        real_function = function.__func__
+    elif callable(function):
+        real_function = function
+    else:
         return function
 
     func_path = []
 
-    module = getattr(function, '__module__', '__main__')
+    module = getattr(real_function, '__module__', '__main__')
     if module:
         func_path.append(module)
 
@@ -30,5 +35,5 @@ def get_function_path(function, bound_to=None):
         else:
             func_path.append(bound_to.__class__.__name__)
 
-    func_path.append(function.__name__)
+    func_path.append(real_function.__name__)
     return '.'.join(func_path)
