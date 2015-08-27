@@ -21,6 +21,7 @@ pip install easy_cache
 # Introduction
 
 ### Different ways to cache something
+
 ```python
 # classic way
 from django.core.cache import cache
@@ -73,8 +74,7 @@ Parameters:
  * `cache_alias` – cache backend alias name, it can also be [Django cache backend alias  name](https://docs.djangoproject.com/en/1.8/ref/settings/#std:setting-CACHES).
  * `cache_instance` – cache backend instance may be provided directly via this parameter.
 
-
- ### ecached_property
+### ecached_property
 
  Should be used to create so-called cached properties, signature exactly the same as for `ecached`.
 
@@ -126,7 +126,7 @@ class A(object):
 
 ```
 
-More complex examples introducing Django models:
+More complex examples introducing Django models and effective tags usage.
 
 ```python
 from django.db import models
@@ -194,10 +194,10 @@ class User(models.Model):
 
             To invalidate concrete cached state call the following method
             with required `state`, e.g.:
-            >> MyUser.get_users_by_state.invalidate_cache_by_args('active')
+            >> User.get_users_by_state.invalidate_cache_by_args('active')
 
             If you'd like to invalidate all caches for all states call:
-            >> MyUser.get_users_by_state.invalidate_cache_by_tags('users_by_states')
+            >> User.get_users_by_state.invalidate_cache_by_tags('users_by_states')
 
             `invalidate_cache_by_tags` supports both string and list parameter types.
         """
@@ -217,7 +217,7 @@ class User(models.Model):
             Caches friends count for 1 hour.
 
             To invalidate cache call the following method:
-            >> MyUser.friends_count.invalidate_cache_by_args()
+            >> User.friends_count.invalidate_cache_by_args()
 
             Note that class object is used here instead of the instance.
         """

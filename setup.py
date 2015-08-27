@@ -44,7 +44,7 @@ def get_long_description():
 setup(
     name='easy-cache',
     packages=['easy_cache'],
-    version='0.0.1',
+    version='0.1.0',
     description='Useful cache decorators for methods and properties',
     author='Oleg Churkin',
     author_email='bahusoff@gmail.com',
