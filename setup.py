@@ -11,7 +11,7 @@ from setuptools import setup
 if sys.argv[-1] == 'test':
     # python-mock is required to run unit-tests
     import unittest
-    os.environ['CACHE_TOOLS_LAZY_MODE_ENABLE'] = 'yes'
+    os.environ['EASY_CACHE_LAZY_MODE_ENABLE'] = 'yes'
     unittest.main('easy_cache.tests', argv=sys.argv[:-1])
 
 
@@ -44,7 +44,7 @@ def get_long_description():
 setup(
     name='easy-cache',
     packages=['easy_cache'],
-    version='0.1.0',
+    version='0.2.0',
     description='Useful cache decorators for methods and properties',
     author='Oleg Churkin',
     author_email='bahusoff@gmail.com',

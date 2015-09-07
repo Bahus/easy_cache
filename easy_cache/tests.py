@@ -10,9 +10,8 @@ import os
 from mock import Mock
 
 
-
 # to make testing easy
-os.environ['CACHE_TOOLS_LAZY_MODE_ENABLE'] = 'yes'
+os.environ['EASY_CACHE_LAZY_MODE_ENABLE'] = 'yes'
 DEBUG = False
 
 
@@ -326,6 +325,11 @@ class User(object):
     def static_method(hg, test='abc', n=1.1):
         return get_test_result(hg, test, n)
 
+    @ecached(tags=['ttt:{c}'], prefix='ppp:{b}')
+    @staticmethod
+    def static_method_default_key(a, b, c=11):
+        return get_test_result(a, b, c)
+
 
 @ecached(timeout=100)
 def computation(a, b, c):
@@ -405,7 +409,7 @@ class ClassCachedDecoratorTest(TestCase):
         if as_property:
             invalidate_cache_key(cache_key)
         else:
-            _callable.invalidate_cache_by_args(*args, **kwargs)
+            _callable.invalidate_cache_by_key(*args, **kwargs)
 
         self.assertNotIn(cache_key, self.local_cache)
         _callable(*args, **kwargs)
@@ -525,7 +529,7 @@ class ClassCachedDecoratorTest(TestCase):
         self.assertFalse(self.cache.called)
 
         # invalidate cache
-        User.test_property.invalidate_cache_by_args()
+        User.test_property.invalidate_cache_by_key()
         self.assertEqual(self.user.test_property, 'property')
         self.cache.assert_called_once_with('property')
 
@@ -674,6 +678,40 @@ class ClassCachedDecoratorTest(TestCase):
         self._check_cache_key(cache_callable, cache_key, hg, test)
         self._check_timeout(cache_key, DEFAULT_TIMEOUT)
         self._check_cache_prefix(cache_callable, cache_prefix, hg, test)
+
+    def test_static_method_default_key(self):
+        cache_callable = User.static_method_default_key
+        cache_prefix = create_cache_key('ppp', 2)
+        cache_key = create_cache_key(
+            cache_prefix, __name__ + '.User.static_method_default_key', 1, 2, 11
+        )
+
+        self._check_base(cache_callable, param_to_change='b')
+        self._check_cache_key(cache_callable, cache_key, a=1, b=2)
+
+        # check partial invalidation
+        self.cache.reset_mock()
+        cache_callable(1, 2, 3)
+        self.assertTrue(self.cache.called)
+
+        self.cache.reset_mock()
+        cache_callable(1, 2, 3)
+        self.assertFalse(self.cache.called)
+
+        self.cache.reset_mock()
+        cache_callable.invalidate_cache_by_tags(c=3)
+        cache_callable(1, 2, 3)
+        self.assertTrue(self.cache.called)
+
+        self.cache.reset_mock()
+        cache_callable.invalidate_cache_by_prefix(b=2)
+        cache_callable(1, 2, 3)
+        self.assertTrue(self.cache.called)
+
+        self.cache.reset_mock()
+        cache_callable.invalidate_cache_by_key(1, b=2, c=3)
+        cache_callable(1, 2, 3)
+        self.assertTrue(self.cache.called)
 
     def test_ordinal_func(self):
         cache_callable = ordinal_func

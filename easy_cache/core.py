@@ -47,10 +47,9 @@ NOT_SET = Value('NOT_SET')
 DEFAULT_TIMEOUT = Value('DEFAULT_TIMEOUT')
 CACHE_KEY_DELIMITER = force_text(':')
 TAG_KEY_PREFIX = force_text('tag')
-RETURN_VALUE_PARAM_NAME = 'returned_value'
 
-LAZY_MODE = os.environ.get('CACHE_TOOLS_LAZY_MODE_ENABLE', '') == 'yes'
-DEFAULT_CACHE_ALIAS = 'default-cache-tools'
+LAZY_MODE = os.environ.get('EASY_CACHE_LAZY_MODE_ENABLE', '') == 'yes'
+DEFAULT_CACHE_ALIAS = 'default-easy-cache'
 
 
 class CacheHandler(object):
@@ -171,11 +170,15 @@ class MetaCallable(collections.Mapping):
     """ Object contains meta information about method or function decorated with ecached,
         passed arguments, returned results, signature description and so on.
     """
+
     def __init__(self, args=(), kwargs=None, returned_value=NOT_SET, call_args=None):
         self.args = args
         self.kwargs = kwargs or {}
         self.returned_value = returned_value
         self.call_args = call_args or {}
+
+    def __contains__(self, item):
+        return item in self.call_args
 
     def __iter__(self):
         return iter(self.call_args)
@@ -396,10 +399,13 @@ class Cached(object):
         if not self.function:
             return template
 
-        if isinstance(template, six.string_types):
-            return force_text(template).format(**meta.call_args)
-        elif isinstance(template, (list, tuple, set)):
-            return [force_text(t).format(**meta.call_args) for t in template]
+        try:
+            if isinstance(template, six.string_types):
+                return force_text(template).format(**meta.call_args)
+            elif isinstance(template, (list, tuple, set)):
+                return [force_text(t).format(**meta.call_args) for t in template]
+        except KeyError as ex:
+            raise ValueError('Parameter "%s" is required for "%s"' % (ex.message, template))
 
         raise TypeError(
             'Unsupported type for key template: {!r}'.format(type(template))
@@ -419,7 +425,9 @@ class Cached(object):
         diff_count = len(arg_spec.args) - len(args)
 
         # do not provide default arguments which were already passed
-        if diff_count > 0:
+        if diff_count > 0 and arg_spec.defaults:
+            # take minimum here
+            diff_count = min(len(arg_spec.defaults), diff_count)
             default_kwargs = dict(zip(arg_spec.args[-diff_count:],
                                       arg_spec.defaults[-diff_count:]))
         else:
@@ -427,13 +435,18 @@ class Cached(object):
 
         default_kwargs.update(kwargs)
         meta.kwargs = default_kwargs
-        meta.call_args = inspect.getcallargs(self.function, *args, **kwargs)
+
+        try:
+            meta.call_args = inspect.getcallargs(self.function, *args, **kwargs)
+        except TypeError:
+            # sometimes not all required parameters are provided, just ignore them
+            meta.call_args = meta.kwargs
         return meta
 
     def generate_cache_key(self, callable_meta):
         return self._format(self.cache_key, callable_meta)
 
-    def invalidate_cache_by_args(self, *args, **kwargs):
+    def invalidate_cache_by_key(self, *args, **kwargs):
         callable_meta = self.collect_meta(args, kwargs)
         cache_key = self.generate_cache_key(callable_meta)
         return self.cache_instance.delete(cache_key)

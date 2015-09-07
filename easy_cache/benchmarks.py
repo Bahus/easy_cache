@@ -167,37 +167,42 @@ def main():
     )
 
     def cleanup(function):
-        if hasattr(function, 'invalidate_cache_by_args'):
-            function.invalidate_cache_by_args()
+        if hasattr(function, 'invalidate_cache_by_key'):
+            function.invalidate_cache_by_key()
         if hasattr(function, 'invalidate_cache_by_tags'):
             function.invalidate_cache_by_tags()
 
     for method, count in benchmarks:
-        sw = Stopwatch('[cleanup] ' + method.__name__)
+        sw1 = Stopwatch('[cleanup] ' + method.__name__)
         cleanup(method)
         c = 0
 
         for _ in xrange(n):
-            with sw.timing():
+            with sw1.timing():
                 method()
             cleanup(method)
 
         assert c == n, c
-        print(sw)
+        print(sw1)
 
-        sw = Stopwatch('[ normal] ' + method.__name__)
+        sw2 = Stopwatch('[ normal] ' + method.__name__)
         cleanup(method)
         c = 0
 
         for _ in xrange(n):
             # skip first time
             if _ == 0:
+                method()
                 continue
-            with sw.timing():
+            with sw2.timing():
                 method()
 
-        assert c == count - 1 if count - 1 else 1, c
-        print(sw)
+        assert c == count, c
+        print(sw2)
+        print('mean diff: {:.3} %, median diff: {:.3} %'.format(
+            float(sw2.mean()) / sw1.mean() * 100,
+            float(sw2.median()) / sw1.median() * 100,
+        ))
 
 
 if __name__ == '__main__':
