@@ -7,6 +7,7 @@ The package supports tag-based cache invalidation and better works with Django, 
 # Requirements
 
 Library was tested in the following environments:
+
  * Python 2.7, 3.4
  * Django 1.7, 1.8
 
@@ -64,10 +65,11 @@ Should be used to decorate any callable and cache returned result.
 Parameters:
 
  * `cache_key` – cache key generator, default value is `None` so the key will be composed automatically based on function name and namespace. Also supports the following parameter types:
-   * **string** – can contain [Python advanced string formatting syntax](https://docs.python.org/2/library/string.html#formatstrings), later this value will be formatted with dict of parameters provided to decorated function, see examples below.
+   * **string** – may contain [Python advanced string formatting syntax](https://docs.python.org/2/library/string.html#formatstrings), later this value will be formatted with dict of parameters provided to decorated function, see examples below.
    * **sequence of strings** – each string must be function parameter name.
    * **callable** – decorated function parameters will be passed to this callable and returned cache key will be used. Only two possible callable signatures are supported: `callable(*args, **kwargs)` and `callable(meta)`, where `meta` is
-   dict-like object with some additional fields – see below.
+   dict-like object with some additional attributes – see below.
+
  * `timeout` – value will be cached with provided timeout, basically it should be number of seconds, however it depends on cache backend type. Default value is `DEFAULT_VALUE` – internal constant means that actually no value is provided to cache backend and thus backend should decide what timeout to use.
  * `tags` – sequence of strings or callable. Should provide or return list of tags added to cached value, so cache may be invalidated later with any tag name. Tag may support advanced string formatting syntax. See `cache_key` docs and examples for more details.
  * `prefix` – this parameter works both: as regular tag and also as cache key prefix, as usual advanced string formatting and callable are supported here.
@@ -81,7 +83,7 @@ Parameters:
 # Simple examples
 
 Code examples is the best way to show power of the package.
-Decorator can be simply used with default parameters only:
+Decorators can be simply used with default parameters only:
 
 ```python
 from easy_cache import ecached, create_cache_key
@@ -360,9 +362,108 @@ invalidate_cache_tags(create_cache_key('tag', 10), cache_alias='memcached')
 invalidate_cache_prefix('pre:{}'.format(2))
 ```
 
-
 # Performance
-TBA
 
-# Internal cache framework
-TBA
+Benchmarking may be executed with `tox` command and it shows that decorators give
+about 4% of overhead in worst case and about 1-2% overhead on the average.
+
+If you don't use tags or prefix you will get one cache request for
+`get` and one request for `set` if result not found in cache, otherwise two
+consecutive requests will be made: `get` and `get_many` to receive actual
+value from cache and validate its tags (prefix). Then one `set_many` request will be
+performed to save a data to cache storage.
+
+
+# Internal caches framework
+
+Easy-cache uses build-in Django cache framework by default, so you can
+choose what cache storage to use on every decorated function, e.g.:
+
+```python
+# Django settings
+CACHES={
+    'local_memory': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'locmem',
+        'KEY_PREFIX': 'custom_prefix',
+    },
+    'memcached': {
+        'BACKEND': 'django.core.cache.backends.memcached.MemcachedCache',
+        'LOCATION': '127.0.0.1:11211',
+        'KEY_PREFIX': 'memcached',
+    }
+}
+
+# then in somewhere code
+@ecached(..., cache_alias='memcached')
+# or
+@ecached(..., cache_alias='local_memory')
+# or even
+from django.core.cache import caches
+another_cache = caches['another_cache']
+@ecached(..., cache_instance=another_cache)
+```
+
+However if you don't use Django, there is cache framework build into
+easy-cache package, it may be used in the same fashion as Django caches:
+
+```python
+# Custom cache instance class must implement the following methods:
+class CustomCache(object):
+
+    def get(self, key, default):
+        ...
+    def get_many(self, iterable):
+        ...
+    def set(self, key, value, timeout):
+        ...
+    def set_many(self, data_dict, timeout):
+        ...
+    def delete(self, key):
+        ...
+
+from easy_cache import caches
+
+custom_cache = CustomCache()
+caches['new_cache'] = custom_cache
+caches.set_default(CustomCacheDefault())
+
+# and then
+@ecached(..., cache_alias='new_cache')
+# or
+@ecached(..., cache_instance=custom_cache)
+# will use `default` alias
+@ecached(...)
+```
+
+# Extending easy-cache API
+
+Some useful methods and classes can be found in `easy_cache.core` module, e.g.
+you may want to extend `Cached` and `TaggedCached` classes and add required
+functionality.
+
+For example you may need to provide cache timeout dynamically depending on
+function parameters:
+
+```python
+from easy_cache.core import Cached
+from functools import wraps
+
+def dynamic_timeout(func):
+    cached_func = Cached(func, cache_key='key:{group}')
+
+    @wraps(func)
+    def _inner(group):
+        if group == 'admins':
+            timeout = 10
+        else:
+            timeout = 100
+        cached_func.timeout = timeout
+        return cached_func(group)
+
+    return _inner
+
+@dynamic_timeout
+def get_users_by_group(group):
+    ...
+```

@@ -323,6 +323,7 @@ class Cached(object):
             self.set_cached_value(cache_key, callable_meta)
             return value
 
+        logger.debug('Hit cache_key="%s"', cache_key)
         return cached_value
 
     def create_cache_key(self, *args, **kwargs):
@@ -373,7 +374,7 @@ class Cached(object):
         if self.timeout is not DEFAULT_TIMEOUT:
             extra['timeout'] = self.timeout
 
-        logger.debug('Set cache_key="%s"', cache_key)
+        logger.debug('Set cache_key="%s" timeout="%s"', cache_key, extra.get('timeout'))
         self.cache_instance.set(cache_key, callable_meta.returned_value, **extra)
 
     @staticmethod
