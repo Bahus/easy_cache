@@ -173,6 +173,7 @@ Meta object has the following parameters:
 # Tags invalidation and cached properties
 
 More complex examples introducing Django models and effective tags usage.
+Check code comments and doc-strings for detailed description.
 
 ```python
 from django.db import models
@@ -251,14 +252,17 @@ class User(models.Model):
             You may want to invalidate this cache in two cases:
 
             1. User adds new book to favorites:
+                >> User.get_favorite_books.invalidate_cache_key('user_favorite_books:{}'.format(user.id))
+                or
                 >> from easy_cache import invalidate_cache_key, create_cache_key
                 >> invalidate_cache_key(create_cache_key('user_favorite_books', user.id))
                 or
                 >> invalidate_cache_key('user_favorite_books:{}'.format(user.id))
             2. Some information about favorite book was changed, e.g. its title:
-                >> from easy_cache import invalidate_cache_tags, create_tag_cache_key
-                >> cache_key = create_tag_cache_key('book', changed_book_id)
+                >> from easy_cache import invalidate_cache_tags, create_cache_key
+                >> cache_key = create_cache_key('book', changed_book_id)
                 >> User.get_favorite_books.invalidate_cache_by_tags(cache_key)
+                or
                 >> invalidate_cache_tags(cache_key)
         """
         return self.favorite_books.filter(user=self)
