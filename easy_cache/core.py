@@ -50,6 +50,8 @@ TAG_KEY_PREFIX = force_text('tag')
 
 LAZY_MODE = os.environ.get('EASY_CACHE_LAZY_MODE_ENABLE', '') == 'yes'
 DEFAULT_CACHE_ALIAS = 'default-easy-cache'
+META_ACCEPTED_ATTR = '_easy_cache_meta_accepted'
+META_ARG_NAME = 'meta'
 
 
 class CacheHandler(object):
@@ -176,6 +178,8 @@ class MetaCallable(collections.Mapping):
         self.kwargs = kwargs or {}
         self.returned_value = returned_value
         self.call_args = call_args or {}
+        self.function = None
+        self.scope = None
 
     def __contains__(self, item):
         return item in self.call_args
@@ -282,8 +286,8 @@ class Cached(object):
             self.cache_key = cache_key
 
         self.function = function
-        self.timeout = timeout
         self.as_property = as_property
+        self.timeout = timeout
         self.instance = None
         self.klass = None
 
@@ -298,6 +302,12 @@ class Cached(object):
     @scope.setter
     def scope(self, value):
         self._scope = value
+
+    def get_timeout(self, callable_meta):
+        if isinstance(self.timeout, int) or self.timeout is DEFAULT_TIMEOUT:
+            return self.timeout
+
+        return self._format(self.timeout, callable_meta)
 
     if LAZY_MODE:
         def _get_cache_instance(self):
@@ -371,21 +381,44 @@ class Cached(object):
         return self.cache_instance.get(cache_key, NOT_FOUND)
 
     def set_cached_value(self, cache_key, callable_meta, **extra):
-        if self.timeout is not DEFAULT_TIMEOUT:
-            extra['timeout'] = self.timeout
+        timeout = self.get_timeout(callable_meta)
+
+        if timeout is not DEFAULT_TIMEOUT:
+            extra['timeout'] = timeout
 
         logger.debug('Set cache_key="%s" timeout="%s"', cache_key, extra.get('timeout'))
         self.cache_instance.set(cache_key, callable_meta.returned_value, **extra)
 
     @staticmethod
     def _check_if_meta_required(callable_template):
+        """
+        Checks if we need to provide `meta` arg into cache key constructor,
+        there are two way to get this right.
+
+            1. Use single `meta` argument:
+
+            def construct_key(meta):
+                ...
+
+            2. User `meta_accepted` decorator:
+
+            from easy_cache import meta_accepted
+
+            @meta_accepted
+            def construct_key(m):
+                ...
+
+        """
         arg_spec = inspect.getargspec(callable_template)
-        if arg_spec.varargs is None and arg_spec.keywords is None and len(arg_spec.args) == 1:
+
+        if getattr(callable_template, META_ACCEPTED_ATTR, False):
             return True
-        elif arg_spec.varargs and arg_spec.keywords:
-            return False
-        raise TypeError('Invalid signature for "%s", must be one of '
-                        '"func(meta)" or "func(*args, **kwargs)"' % callable_template)
+        elif (arg_spec.varargs is None and
+              arg_spec.keywords is None and
+              arg_spec.args == [META_ARG_NAME]):
+            return True
+
+        return False
 
     def _format(self, template, meta):
         if isinstance(template, (staticmethod, classmethod)):
@@ -436,6 +469,8 @@ class Cached(object):
 
         default_kwargs.update(kwargs)
         meta.kwargs = default_kwargs
+        meta.function = self.function
+        meta.scope = self.scope
 
         try:
             meta.call_args = inspect.getcallargs(self.function, *args, **kwargs)

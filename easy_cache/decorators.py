@@ -3,7 +3,7 @@ import collections
 import six
 from functools import update_wrapper
 
-from easy_cache.core import Cached, TaggedCached, DEFAULT_TIMEOUT
+from easy_cache.core import Cached, TaggedCached, DEFAULT_TIMEOUT, META_ACCEPTED_ATTR
 
 
 # noinspection PyPep8Naming
@@ -136,3 +136,14 @@ def ecached_property(cache_key=None, timeout=DEFAULT_TIMEOUT, tags=(), prefix=No
         return cache
 
     return wrapper
+
+
+def meta_accepted(func):
+
+    if isinstance(func, (staticmethod, classmethod)):
+        _func = func.__func__
+    else:
+        _func = func
+    setattr(_func, META_ACCEPTED_ATTR, True)
+
+    return func

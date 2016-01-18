@@ -15,7 +15,7 @@ os.environ['EASY_CACHE_LAZY_MODE_ENABLE'] = 'yes'
 DEBUG = False
 
 
-from easy_cache import ecached, ecached_property
+from easy_cache import ecached, ecached_property, meta_accepted
 from easy_cache import (
     set_global_cache_instance,
     invalidate_cache_key,
@@ -240,6 +240,12 @@ def get_test_result(*args, **kwargs):
     return result
 
 
+def choose_timeout(self, a, b, c):
+    if not isinstance(a, int):
+        return DEFAULT_TIMEOUT
+    return a * 100
+
+
 # noinspection PyNestedDecorators
 class User(object):
     name = 'user_name'
@@ -247,6 +253,10 @@ class User(object):
 
     def __init__(self, uid):
         self.id = uid
+
+    @ecached('dyn_timeout:{a}', timeout=choose_timeout)
+    def instance_dynamic_timeout(self, a, b, c):
+        return get_test_result(a, b, c)
 
     @ecached()
     def instance_default_cache_key(self, a, b, c=8):
@@ -290,6 +300,20 @@ class User(object):
         self = meta.args[0]
         a = meta.args[1]
         return [create_cache_key(self.name, self.id, a), 'simple_tag']
+
+    @meta_accepted
+    @staticmethod
+    def generate_key_based_on_meta(m, a=1):
+        assert isinstance(m, MetaCallable)
+        assert m.function is getattr(m['self'], 'instance_method_meta_test').function
+        assert m.scope is m['self']
+        assert a == 1
+
+        return create_cache_key(m['a'], m['b'], m['c'])
+
+    @ecached(generate_key_based_on_meta)
+    def instance_method_meta_test(self, a, b, c=666):
+        return get_test_result(a, b, c)
 
     @ecached('{a}:{b}', tags=generate_custom_tags)
     def instance_method_custom_tags(self, a, b, c=14):
@@ -785,6 +809,42 @@ class ClassCachedDecoratorTest(TestCase):
         self.assertEqual(cache_callable(a=a, b=b), result)
         self.cache.assert_called_once_with(result)
         self.cache.reset_mock()
+
+        # cached version
+        self.assertEqual(cache_callable(a=a, b=b), result)
+        self.assertFalse(self.cache.called)
+        self.cache.reset_mock()
+
+        # invalidate cache via attached invalidator
+        cache_callable.invalidate_cache_by_key(a=a, b=b)
+        self.assertEqual(cache_callable(a=a, b=b), result)
+        self.cache.assert_called_once_with(result)
+        self.cache.reset_mock()
+
+    def test_instance_method_and_meta_accepted_decorator(self):
+        cache_callable = self.user.instance_method_meta_test
+
+        cache_key = create_cache_key(1, 2, 5)
+
+        self._check_base(cache_callable)
+        self._check_cache_key(cache_callable, cache_key, 1, 2, c=5)
+        self._check_timeout(cache_key, DEFAULT_TIMEOUT)
+        self.assertEqual(len(self.local_cache), 1)
+
+    def test_instance_method_dynamic_timeout(self):
+        cache_callable = self.user.instance_dynamic_timeout
+
+        self._check_base(cache_callable)
+
+        cache_key = create_cache_key('dyn_timeout', 2)
+        self._check_cache_key(cache_callable, cache_key, 2, 3, 4)
+        self._check_timeout(cache_key, 2 * 100)
+
+        self.cache.reset_mock()
+
+        cache_key = create_cache_key('dyn_timeout', 4)
+        self._check_cache_key(cache_callable, cache_key, 4, 5, 6)
+        self._check_timeout(cache_key, 4 * 100)
 
 
 # Django-related part

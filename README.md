@@ -8,8 +8,8 @@ The package supports tag-based cache invalidation and better works with Django, 
 
 Library was tested in the following environments:
 
- * Python 2.7, 3.4
- * Django 1.7, 1.8
+ * Python 2.7, 3.4, 3.5
+ * Django 1.7, 1.8, 1.9
 
 Feel free to try it in yours, but it's not guaranteed it will work. Submit an issue if you think it should.
 
@@ -67,7 +67,7 @@ Parameters:
  * `cache_key` – cache key generator, default value is `None` so the key will be composed automatically based on function name and namespace. Also supports the following parameter types:
    * **string** – may contain [Python advanced string formatting syntax](https://docs.python.org/2/library/string.html#formatstrings), later this value will be formatted with dict of parameters provided to decorated function, see examples below.
    * **sequence of strings** – each string must be function parameter name.
-   * **callable** – decorated function parameters will be passed to this callable and returned cache key will be used. Only two possible callable signatures are supported: `callable(*args, **kwargs)` and `callable(meta)`, where `meta` is
+   * **callable** – decorated function parameters will be passed to this callable and returned cache key will be used. Also one additional signature is available: `callable(meta)`, where `meta` is
    dict-like object with some additional attributes – see below.
 
  * `timeout` – value will be cached with provided timeout, basically it should be number of seconds, however it depends on cache backend type. Default value is `DEFAULT_VALUE` – internal constant means that actually no value is provided to cache backend and thus backend should decide what timeout to use.
@@ -90,6 +90,9 @@ from easy_cache import ecached, create_cache_key
 
 # default parameters, cache key will be generated automatically:
 # <__module__>.<__class__>.<function name> + function parameters
+# converted to strings, so be careful when using complex objects, it's
+# better to write custom cache key generator in such cases.
+#
 # timeout will be default for specified cache backend
 # "default" cache backend will be used if you use Django
 @ecached()
@@ -117,13 +120,22 @@ def time_consuming_operation(a, b, c='default'):
     pass
 
 # working with parameters provided to cached function
-# cache key constructor must have the same signature as decorated function
+# cache key generator must have the same signature as decorated function
 def custom_cache_key(self, a, b, c, d):
     return create_cache_key(self.id, a, d)
 
 # working with `meta` object
 def custom_cache_key_meta(meta):
     return '{}:{}:{}'.format(meta['self'].id, meta['a'], meta['d'])
+
+# or equivalent
+from easy_cache import meta_accepted
+
+@meta_accepted
+def custom_cache_key_meta(parameter_with_any_name):
+    meta = parameter_with_any_name
+    return '{}:{}:{}'.format(meta['self'].id, meta['a'], meta['d'])
+
 
 class A(object):
     id = 1
@@ -149,7 +161,7 @@ class B(object):
 
     @ecached('info_cache:{cls.CONST}', 3600, cache_alias='redis_cache')
     @classmethod
-    def get_info(arg):
+    def get_info(cls):
         pass
 ```
 
@@ -169,6 +181,8 @@ Meta object has the following parameters:
  ```
  * `call_args` - dictionary with all positional and keyword arguments provided
  to decorated function, you may also access them via `__getitem__` dict interface, e. g. `meta['param1']`.
+ * `function` - decorated callable
+ * `scope` - object to which decorated callable is attached, `None` otherwise. Usually it's an instance or a class.
 
 # Tags invalidation and cached properties
 
@@ -252,18 +266,18 @@ class User(models.Model):
             You may want to invalidate this cache in two cases:
 
             1. User adds new book to favorites:
-                >> User.get_favorite_books.invalidate_cache_key('user_favorite_books:{}'.format(user.id))
+                >> User.get_favorite_books.invalidate_cache_by_key(user)
                 or
                 >> from easy_cache import invalidate_cache_key, create_cache_key
                 >> invalidate_cache_key(create_cache_key('user_favorite_books', user.id))
                 or
                 >> invalidate_cache_key('user_favorite_books:{}'.format(user.id))
             2. Some information about favorite book was changed, e.g. its title:
-                >> from easy_cache import invalidate_cache_tags, create_cache_key
-                >> cache_key = create_cache_key('book', changed_book_id)
-                >> User.get_favorite_books.invalidate_cache_by_tags(cache_key)
+                >> from easy_cache import invalidate_cache_tags, create_tag_cache_key
+                >> tag_cache_key = create_tag_cache_key('book', changed_book_id)
+                >> User.get_favorite_books.invalidate_cache_by_tags(tag_cache_key)
                 or
-                >> invalidate_cache_tags(cache_key)
+                >> invalidate_cache_tags(tag_cache_key)
         """
         return self.favorite_books.filter(user=self)
 
@@ -354,7 +368,7 @@ should be provided with parameters if they are used in cache key/tag/prefix:
 def time_consuming_operation(a, b, c=100):
     pass
 
-time_consuming_operation.invalidate_cache_by_key(1, 2, c=11)
+time_consuming_operation.invalidate_cache_by_key(a=1, c=11)
 time_consuming_operation.invalidate_cache_by_tags(a=10)
 time_consuming_operation.invalidate_cache_by_prefix(b=2)
 
@@ -417,12 +431,18 @@ class CustomCache(object):
 
     def get(self, key, default):
         ...
+        return value
+
     def get_many(self, iterable):
         ...
+        return {key1: value1, key2: value2, ...}
+
     def set(self, key, value, timeout):
         ...
+
     def set_many(self, data_dict, timeout):
         ...
+
     def delete(self, key):
         ...
 
@@ -442,9 +462,7 @@ caches.set_default(CustomCacheDefault())
 
 # Extending easy-cache API
 
-Some useful methods and classes can be found in `easy_cache.core` module, e.g.
-you may want to extend `Cached` and `TaggedCached` classes and add required
-functionality.
+Some useful methods and classes can be found in `easy_cache.core` module, e.g. you may want to extend `Cached` and `TaggedCached` classes and add required functionality.
 
 For example you may need to provide cache timeout dynamically depending on
 function parameters:

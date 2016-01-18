@@ -14,4 +14,4 @@ from easy_cache.core import (
     MetaCallable,
 )
 
-from easy_cache.decorators import ecached, ecached_property
+from easy_cache.decorators import ecached, ecached_property, meta_accepted
