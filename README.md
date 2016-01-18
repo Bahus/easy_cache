@@ -64,13 +64,13 @@ Should be used to decorate any callable and cache returned result.
 
 Parameters:
 
- * `cache_key` – cache key generator, default value is `None` so the key will be composed automatically based on function name and namespace. Also supports the following parameter types:
+ * `cache_key` – cache key generator, default value is `None` so the key will be composed automatically based on function name, namespace and passed parameters. Also supports the following parameter types:
    * **string** – may contain [Python advanced string formatting syntax](https://docs.python.org/2/library/string.html#formatstrings), later this value will be formatted with dict of parameters provided to decorated function, see examples below.
    * **sequence of strings** – each string must be function parameter name.
    * **callable** – decorated function parameters will be passed to this callable and returned cache key will be used. Also one additional signature is available: `callable(meta)`, where `meta` is
    dict-like object with some additional attributes – see below.
 
- * `timeout` – value will be cached with provided timeout, basically it should be number of seconds, however it depends on cache backend type. Default value is `DEFAULT_VALUE` – internal constant means that actually no value is provided to cache backend and thus backend should decide what timeout to use.
+ * `timeout` – value will be cached with provided timeout, basically it should be number of seconds, however it depends on cache backend type. Default value is `DEFAULT_VALUE` – internal constant means that actually no value is provided to cache backend and thus backend should decide what timeout to use. Callable is also supported.
  * `tags` – sequence of strings or callable. Should provide or return list of tags added to cached value, so cache may be invalidated later with any tag name. Tag may support advanced string formatting syntax. See `cache_key` docs and examples for more details.
  * `prefix` – this parameter works both: as regular tag and also as cache key prefix, as usual advanced string formatting and callable are supported here.
  * `cache_alias` – cache backend alias name, it can also be [Django cache backend alias  name](https://docs.djangoproject.com/en/1.8/ref/settings/#std:setting-CACHES).
@@ -82,7 +82,7 @@ Parameters:
 
 # Simple examples
 
-Code examples is the best way to show power of the package.
+Code examples is the best way to show the power of this package.
 Decorators can be simply used with default parameters only:
 
 ```python
@@ -172,8 +172,8 @@ Meta object has the following parameters:
  * `args` – tuple with positional arguments provided to decorated function
  * `kwargs` – dictionary with keyword arguments provided to decorated function
  * `returned_value` – value returned from decorated function, available only
- when meta object is handled in `tags` or `prefix` constructors. Before using
- this parameter you have to check `has_returned_value` property:
+ when meta object is handled in `tags` or `prefix` generators. You have to check `has_returned_value` property before using
+ this parameter:
  ```python
  def f(meta):
      if meta.has_returned_value:
@@ -224,6 +224,8 @@ class User(models.Model):
             To invalidate concrete cached state call the following method
             with required `state`, e.g.:
             >> User.get_users_by_state.invalidate_cache_by_key('active')
+            or
+            >> User.get_users_by_state.invalidate_cache_by_key(state='active')
 
             If you'd like to invalidate all caches for all states call:
             >> User.get_users_by_state.invalidate_cache_by_tags('users_by_states')
@@ -239,6 +241,8 @@ class User(models.Model):
 
             Call the following method, to invalidate cache:
             >> User.friends_count.invalidate_cache_by_key()
+            or
+            >> self.__class__.friends_count.invalidate_cache_by_key()
 
             Note that class object is used here instead of the instance.
         """
@@ -267,6 +271,8 @@ class User(models.Model):
 
             1. User adds new book to favorites:
                 >> User.get_favorite_books.invalidate_cache_by_key(user)
+                or
+                >> User.get_favorite_books.invalidate_cache_by_key(self=user)
                 or
                 >> from easy_cache import invalidate_cache_key, create_cache_key
                 >> invalidate_cache_key(create_cache_key('user_favorite_books', user.id))
@@ -354,9 +360,11 @@ from easy_cache import (
     create_cache_key,
 )
 
-invalidate_cache_key(cache_key, cache_instance=None, cache_alias=None)
-invalidate_cache_tags(tags, cache_instance=None, cache_alias=None)
-invalidate_cache_prefix(prefix, cache_instance=None, cache_alias=None)
+# Note that `cache_instance` and `cache_alias` may be passed
+# to the following invalidators
+invalidate_cache_key(cache_key)
+invalidate_cache_tags(tags)
+invalidate_cache_prefix(prefix)
 ```
 
 Here `tags` can be as string (single tag) or list of tags. Bound methods
@@ -377,7 +385,7 @@ invalidate_cache_key(
     create_cache_key('key', 1, 'value', 11), cache_alias='memcached'
 )
 invalidate_cache_tags(create_cache_key('tag', 10), cache_alias='memcached')
-invalidate_cache_prefix('pre:{}'.format(2))
+invalidate_cache_prefix('pre:{}'.format(2), cache_alias='memcached')
 ```
 
 # Performance
@@ -460,32 +468,20 @@ caches.set_default(CustomCacheDefault())
 @ecached(...)
 ```
 
-# Extending easy-cache API
+# Dynamic timeout example
 
-Some useful methods and classes can be found in `easy_cache.core` module, e.g. you may want to extend `Cached` and `TaggedCached` classes and add required functionality.
-
-For example you may need to provide cache timeout dynamically depending on
+You may need to provide cache timeout dynamically depending on
 function parameters:
 
 ```python
-from easy_cache.core import Cached
-from functools import wraps
+def dynamic_timeout(group):
+    if group == 'admins':
+        timeout = 10
+    else:
+        timeout = 100
+    return timeout
 
-def dynamic_timeout(func):
-    cached_func = Cached(func, cache_key='key:{group}')
-
-    @wraps(func)
-    def _inner(group):
-        if group == 'admins':
-            timeout = 10
-        else:
-            timeout = 100
-        cached_func.timeout = timeout
-        return cached_func(group)
-
-    return _inner
-
-@dynamic_timeout
+@ecached('key:{group}', timeout=dynamic_timeout)
 def get_users_by_group(group):
     ...
 ```
