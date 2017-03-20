@@ -6,6 +6,7 @@ from timeit import default_timer
 
 import six
 
+from easy_cache.decorators import ecached
 
 # noinspection PyUnresolvedReferences
 from six.moves import xrange
@@ -29,12 +30,12 @@ settings.configure(
         },
         'memcached': {
             'BACKEND': 'django.core.cache.backends.memcached.MemcachedCache',
-            'LOCATION': '127.0.0.1:11211',
+            'LOCATION': '192.168.99.100:11211',
             'KEY_PREFIX': 'memcached',
         },
         'redis': {
             'BACKEND': 'django_redis.cache.RedisCache',
-            'LOCATION': 'redis://127.0.0.1:6379/1',
+            'LOCATION': 'redis://192.168.99.100:6379/1',
             'OPTIONS': {
                 'CLIENT_CLASS': 'django_redis.client.DefaultClient',
             }
@@ -112,9 +113,6 @@ def time_consuming_operation():
 
 def test_no_cache():
     return time_consuming_operation()
-
-
-from easy_cache.decorators import ecached
 
 
 @ecached(cache_alias='default')

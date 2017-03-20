@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from __future__ import unicode_literals
+
 import six
 
 
@@ -34,6 +36,9 @@ def get_function_path(function, bound_to=None):
             func_path.append(bound_to.__name__)
         else:
             func_path.append(bound_to.__class__.__name__)
+        func_path.append(real_function.__name__)
+    else:
+        # qualname is available in Python 3 only
+        func_path.append(getattr(real_function, '__qualname__', real_function.__name__))
 
-    func_path.append(real_function.__name__)
     return '.'.join(func_path)

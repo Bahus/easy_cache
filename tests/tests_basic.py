@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
-import sys
-import logging
-from unittest import TestCase
 import collections
-import random
-from functools import partial
-
+import logging
 import os
+import random
+import sys
+import six
+
+from functools import partial
 from mock import Mock
+from unittest import TestCase, skipIf
 
 
 # to make testing easy
@@ -24,12 +25,12 @@ from easy_cache import (
     get_default_cache_instance,
 )
 from easy_cache.core import (
-    force_text,
     create_cache_key,
     create_tag_cache_key,
     DEFAULT_TIMEOUT,
     MetaCallable,
 )
+from easy_cache.compat import force_text
 
 
 cache_mock = Mock()
@@ -886,7 +887,7 @@ class DjangoLocMemCacheTest(ClassCachedDecoratorTest, SimpleTestCase):
     CACHES={
         'default': {
             'BACKEND': 'django.core.cache.backends.memcached.MemcachedCache',
-            'LOCATION': '127.0.0.1:11211',
+            'LOCATION': '192.168.99.100:11211',
             'KEY_PREFIX': 'memcached',
         }
     }
@@ -899,7 +900,7 @@ class LiveMemcachedTest(DjangoLocMemCacheTest):
     CACHES={
         'default': {
             'BACKEND': 'django.core.cache.backends.memcached.PyLibMCCache',
-            'LOCATION': '127.0.0.1:11211',
+            'LOCATION': '192.168.99.100:11211',
             'KEY_PREFIX': 'pylibmc',
         }
     }
@@ -912,7 +913,7 @@ class LivePyLibMCTest(DjangoLocMemCacheTest):
     CACHES={
         'default': {
             'BACKEND': 'django_redis.cache.RedisCache',
-            'LOCATION': 'redis://127.0.0.1:6379/1',
+            'LOCATION': 'redis://192.168.99.100:6379/1',
             'OPTIONS': {
                 'CLIENT_CLASS': 'django_redis.client.DefaultClient',
             }
@@ -925,7 +926,8 @@ class LiveRedisTest(DjangoLocMemCacheTest):
 
 class MiscellaneousTest(TestCase):
 
-    def test_class_repr(self):
+    @skipIf(six.PY3, 'This test should only be executed in Python 2')
+    def test_class_repr_py2(self):
         self.assertEqual(
             repr(User.class_method_full_spec),
             '<TaggedCached: '
@@ -956,12 +958,59 @@ class MiscellaneousTest(TestCase):
             'cache_key="static_key", timeout=DEFAULT_TIMEOUT>'
         )
 
-        # TODO: incorrect generate_custom_tags qualname
         self.assertEqual(
             repr(User.instance_method_custom_tags),
             '<TaggedCached: '
             'callable="' + __name__ + '.User.instance_method_custom_tags", '
             'cache_key="{a}:{b}", tags="' + __name__ + '.generate_custom_tags", '
+            'prefix="None", timeout=DEFAULT_TIMEOUT>'
+        )
+
+        self.assertEqual(
+            repr(ordinal_func),
+            '<TaggedCached: '
+            'callable="' + __name__ + '.ordinal_func", '
+            'cache_key="{kwargs[a]}:{kwargs[b]}", tags="()", '
+            'prefix="пользователь", timeout=DEFAULT_TIMEOUT>'
+        )
+
+    @skipIf(six.PY2, 'This test should only be executed in Python 3')
+    def test_class_repr_py3(self):
+        self.assertEqual(
+            repr(User.class_method_full_spec),
+            '<TaggedCached: '
+            'callable="' + __name__ + '.User.class_method_full_spec", '
+            'cache_key="{cls.name}:{a}", tags="[\'tag4\', \'tag5:{cls.name}\']", '
+            'prefix="' + __name__ + '.User.<lambda>", timeout=500>'
+        )
+
+        self.assertEqual(
+            repr(User.class_method_default_cache_key),
+            '<Cached: '
+            'callable="' + __name__ + '.User.class_method_default_cache_key", '
+            'cache_key="easy_cache.core.Cached.create_cache_key", timeout=DEFAULT_TIMEOUT>'
+        )
+
+        self.assertEqual(
+            repr(User.static_method),
+            '<TaggedCached: '
+            'callable="' + __name__ + '.User.static_method", '
+            'cache_key="{hg}:{hg}:{test}", tags="()", '
+            'prefix="пользователь", timeout=DEFAULT_TIMEOUT>'
+        )
+
+        self.assertEqual(
+            repr(User.property_no_tags),
+            '<Cached: '
+            'callable="' + __name__ + '.User.property_no_tags", '
+            'cache_key="static_key", timeout=DEFAULT_TIMEOUT>'
+        )
+
+        self.assertEqual(
+            repr(User.instance_method_custom_tags),
+            '<TaggedCached: '
+            'callable="' + __name__ + '.User.instance_method_custom_tags", '
+            'cache_key="{a}:{b}", tags="' + __name__ + '.User.generate_custom_tags", '
             'prefix="None", timeout=DEFAULT_TIMEOUT>'
         )
 

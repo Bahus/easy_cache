@@ -1,36 +1,46 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
-import threading
-import logging
-import inspect
-from time import time
-import collections
 
+import collections
+import inspect
+import logging
 import os
+import threading
+from time import time
+
 import six
+
+from .compat import force_text, force_binary, getargspec
 from .utils import get_function_path
 
 
+try:
+    # noinspection PyUnresolvedReferences
+    import django
+
+    # noinspection PyUnresolvedReferences
+    def _get_cache_by_alias(alias):
+        if alias == DEFAULT_CACHE_ALIAS:
+            from django.core.cache import cache
+        else:
+            try:
+                from django.core.cache import caches
+                cache = caches[alias]
+            except ImportError:
+                from django.core.cache import get_cache
+                cache = get_cache(alias)
+        return cache
+
+except ImportError:
+
+    class ImproperlyConfigured(Exception):
+        pass
+
+    def _get_cache_by_alias(alias):
+        raise ImproperlyConfigured('Cache instance not found for alias "%s"' % alias)
+
+
 logger = logging.getLogger(__name__)
-
-
-def force_text(obj):
-    if isinstance(obj, six.text_type):
-        return obj
-    try:
-        return six.text_type(obj)
-    except UnicodeDecodeError:
-        return obj.decode('utf-8')
-
-
-def force_binary(obj):
-    if isinstance(obj, six.binary_type):
-        return obj
-
-    try:
-        return six.binary_type(obj)
-    except UnicodeEncodeError:
-        return obj.encode('utf-8')
 
 
 class Value(object):
@@ -60,6 +70,10 @@ class CacheHandler(object):
     def __init__(self):
         self._caches = threading.local()
 
+    # noinspection PyMethodMayBeStatic
+    def get_default_cache(self, alias):
+        return _get_cache_by_alias(alias)
+
     def __getitem__(self, alias):
         try:
             return self._caches.caches[alias]
@@ -68,17 +82,7 @@ class CacheHandler(object):
         except KeyError:
             pass
 
-        if alias == DEFAULT_CACHE_ALIAS:
-            from django.core.cache import cache
-        else:
-            try:
-                # noinspection PyUnresolvedReferences
-                from django.core.cache import caches
-                cache = caches[alias]
-            except ImportError:
-                from django.core.cache import get_cache
-                cache = get_cache(alias)
-
+        cache = self.get_default_cache(alias)
         self._caches.caches[alias] = cache
         return cache
 
@@ -160,12 +164,9 @@ def get_timestamp():
     return int(time() * 1000000)
 
 
-def hash_dict(dictionary):
-    """
-        http://stackoverflow.com/questions/5884066/hashing-a-python-dictionary
-        works only for hashable items in dict
-    """
-    return hash(frozenset(dictionary.items()))
+def compare_dicts(d1, d2):
+    """Use simple comparison"""
+    return dict(d1) == dict(d2)
 
 
 class MetaCallable(collections.Mapping):
@@ -207,14 +208,14 @@ class TaggedCacheProxy(object):
             :param cache_instance: should support `set_many` and
             `get_many` operations
         """
-        self._cache = cache_instance
+        self._cache_instance = cache_instance
 
     def make_value(self, key, value, tags):
         data = {}
         tags = [create_tag_cache_key(_) for _ in tags]
 
         # get tags and their cached values (if exists)
-        tags_dict = self._cache.get_many(tags)
+        tags_dict = self._cache_instance.get_many(tags)
 
         # set new timestamps for missed tags
         for tag_key in tags:
@@ -232,14 +233,14 @@ class TaggedCacheProxy(object):
         return data
 
     def __getattr__(self, item):
-        return getattr(self._cache, item)
+        return getattr(self._cache_instance, item)
 
     def set(self, key, value, *args, **kwargs):
         value_dict = self.make_value(key, value, kwargs.pop('tags'))
-        return self._cache.set_many(value_dict, *args, **kwargs)
+        return self._cache_instance.set_many(value_dict, *args, **kwargs)
 
     def get(self, key, default=None, **kwargs):
-        value = self._cache.get(key, default=NOT_FOUND, **kwargs)
+        value = self._cache_instance.get(key, default=NOT_FOUND, **kwargs)
 
         # not found in cache
         if value is NOT_FOUND:
@@ -250,10 +251,10 @@ class TaggedCacheProxy(object):
             return value
 
         # check if it has valid tags
-        cached_tags_dict = self._cache.get_many(tags_dict.keys())
+        cached_tags_dict = self._cache_instance.get_many(tags_dict.keys())
 
         # compare dicts
-        if hash_dict(cached_tags_dict) != hash_dict(tags_dict):
+        if not compare_dicts(cached_tags_dict, tags_dict):
             # cache is invalid - return default value
             return default
 
@@ -262,7 +263,7 @@ class TaggedCacheProxy(object):
     def invalidate(self, tags):
         """ Invalidates cache by tags """
         ts = get_timestamp()
-        return self._cache.set_many({create_tag_cache_key(tag): ts for tag in tags})
+        return self._cache_instance.set_many({create_tag_cache_key(tag): ts for tag in tags})
 
 
 class Cached(object):
@@ -409,13 +410,14 @@ class Cached(object):
                 ...
 
         """
-        arg_spec = inspect.getargspec(callable_template)
-
         if getattr(callable_template, META_ACCEPTED_ATTR, False):
             return True
-        elif (arg_spec.varargs is None and
-              arg_spec.keywords is None and
-              arg_spec.args == [META_ARG_NAME]):
+
+        arg_spec = getargspec(callable_template)
+
+        if (arg_spec.varargs is None and
+                arg_spec.keywords is None and
+                arg_spec and arg_spec.args[0] == META_ARG_NAME):
             return True
 
         return False
@@ -439,7 +441,7 @@ class Cached(object):
             elif isinstance(template, (list, tuple, set)):
                 return [force_text(t).format(**meta.call_args) for t in template]
         except KeyError as ex:
-            raise ValueError('Parameter "%s" is required for "%s"' % (ex.message, template))
+            raise ValueError('Parameter "%s" is required for "%s"' % (ex, template))
 
         raise TypeError(
             'Unsupported type for key template: {!r}'.format(type(template))
@@ -455,7 +457,7 @@ class Cached(object):
             return meta
 
         # default arguments are also passed to template function
-        arg_spec = inspect.getargspec(self.function)
+        arg_spec = getargspec(self.function)
         diff_count = len(arg_spec.args) - len(args)
 
         # do not provide default arguments which were already passed
@@ -566,7 +568,7 @@ class TaggedCached(Cached):
         else:
             tags = to_set(self._format(tags, callable_meta))
             if all_tags:
-                tags = tags & all_tags
+                tags &= all_tags
 
         return self.cache_instance.invalidate(tags)
 

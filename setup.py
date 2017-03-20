@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function
+import io
+import os
 import sys
 import subprocess
 
-import io
-import os
-from setuptools import setup
+from setuptools import setup, find_packages
+import versioneer
 
 
 if sys.argv[-1] == 'test':
@@ -41,10 +42,26 @@ def get_long_description():
     else:
         return rst
 
+
+tests_require = [
+    'pytest==3.0.4',
+    'Django==1.8.3',
+    'django-redis==4.2.0',
+    'memory-profiler==0.33',
+    'mock==1.0.1',
+    'psutil==3.1.1',
+    'python-memcached==1.57',
+    'redis==2.10.3',
+    'pylibmc==1.5.0',
+    'tox-pyenv==1.0.3',
+]
+
+
 setup(
     name='easy-cache',
-    packages=['easy_cache'],
-    version='0.3.0',
+    packages=find_packages('easy_cache'),
+    version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
     description='Useful cache decorators for methods and properties',
     author='Oleg Churkin',
     author_email='bahusoff@gmail.com',
@@ -67,16 +84,8 @@ setup(
     long_description=get_long_description(),
     requires=['six'],
     install_requires=['six'],
+    tests_require=tests_require,
     extras_require={
-        'tests': [
-            'Django==1.8.3',
-            'django-redis==4.2.0',
-            'memory-profiler==0.33',
-            'mock==1.0.1',
-            'psutil==3.1.1',
-            'python-memcached==1.57',
-            'redis==2.10.3',
-            'pylibmc==1.5.0',
-        ],
+        'tests': tests_require,
     },
 )
