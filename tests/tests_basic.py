@@ -10,10 +10,7 @@ from functools import partial
 from mock import Mock
 from unittest import TestCase, skipIf
 
-
-# to make testing easy
-os.environ['EASY_CACHE_LAZY_MODE_ENABLE'] = 'yes'
-DEBUG = False
+from tests.conf import DEBUG, REDIS_HOST, MEMCACHED_HOST
 
 
 from easy_cache import ecached, ecached_property, meta_accepted
@@ -887,7 +884,7 @@ class DjangoLocMemCacheTest(ClassCachedDecoratorTest, SimpleTestCase):
     CACHES={
         'default': {
             'BACKEND': 'django.core.cache.backends.memcached.MemcachedCache',
-            'LOCATION': '192.168.99.100:11211',
+            'LOCATION': MEMCACHED_HOST,
             'KEY_PREFIX': 'memcached',
         }
     }
@@ -900,7 +897,7 @@ class LiveMemcachedTest(DjangoLocMemCacheTest):
     CACHES={
         'default': {
             'BACKEND': 'django.core.cache.backends.memcached.PyLibMCCache',
-            'LOCATION': '192.168.99.100:11211',
+            'LOCATION': MEMCACHED_HOST,
             'KEY_PREFIX': 'pylibmc',
         }
     }
@@ -913,7 +910,7 @@ class LivePyLibMCTest(DjangoLocMemCacheTest):
     CACHES={
         'default': {
             'BACKEND': 'django_redis.cache.RedisCache',
-            'LOCATION': 'redis://192.168.99.100:6379/1',
+            'LOCATION': 'redis://{}/1'.format(REDIS_HOST),
             'OPTIONS': {
                 'CLIENT_CLASS': 'django_redis.client.DefaultClient',
             }

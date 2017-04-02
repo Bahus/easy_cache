@@ -8,8 +8,8 @@ The package supports tag-based cache invalidation and better works with Django, 
 
 Library was tested in the following environments:
 
- * Python 2.7, 3.4, 3.5
- * Django 1.7, 1.8, 1.9
+ * Python 2.7, 3.5, 3.6
+ * Django 1.8, 1.9, 1.10
 
 Feel free to try it in yours, but it's not guaranteed it will work. Submit an issue if you think it should.
 
@@ -27,19 +27,21 @@ pip install easy_cache
 # classic way
 from django.core.cache import cache
 
-def time_consuming_operation(count):
-    cache_key = 'time_consuming_operation_{}'.format(count)
+def time_consuming_operation(n):
+    """Calculate sum of number from 1 to provided n"""
+    cache_key = 'time_consuming_operation_{}'.format(n)
     result = cache.get(cache_key, None)
 
     if result is None:
         # not found in cache
-        result = sum(range(count))
+        result = sum(range(n + 1))
+        # cache result for one hour
         cache.set(cache_key, result, 3600)
 
     return result
 
-def invalidate_cache(count):
-    cache.delete('time_consuming_operation_{}'.format(count))
+def invalidate_cache(n):
+    cache.delete('time_consuming_operation_{}'.format(n))
 ```
 
 Now let's take a look how `easy_cache` can help:
@@ -48,12 +50,12 @@ Now let's take a look how `easy_cache` can help:
 # easy way
 from easy_cache import ecached
 
-@ecached('time_consuming_operation_{count}', 3600)
-def time_consuming_operation(count):
-    return sum(range(count))
+@ecached('time_consuming_operation_{n}', 3600)
+def time_consuming_operation(n):
+    return sum(range(n + 1))
 
-def invalidate_cache(count):
-    time_consuming_operation.invalidate_cache_by_key(count)
+def invalidate_cache(n):
+    time_consuming_operation.invalidate_cache_by_key(n)
 ```
 
 Heart of the package is two decorators with the similar parameters:
@@ -67,13 +69,13 @@ Parameters:
  * `cache_key` – cache key generator, default value is `None` so the key will be composed automatically based on function name, namespace and passed parameters. Also supports the following parameter types:
    * **string** – may contain [Python advanced string formatting syntax](https://docs.python.org/2/library/string.html#formatstrings), later this value will be formatted with dict of parameters provided to decorated function, see examples below.
    * **sequence of strings** – each string must be function parameter name.
-   * **callable** – decorated function parameters will be passed to this callable and returned cache key will be used. Also one additional signature is available: `callable(meta)`, where `meta` is
+   * **callable** – used to generate cache key, decorated function parameters will be passed to this callable and returned value will be used. Also one additional signature is available: `callable(meta)`, where `meta` is
    dict-like object with some additional attributes – see below.
 
  * `timeout` – value will be cached with provided timeout, basically it should be number of seconds, however it depends on cache backend type. Default value is `DEFAULT_VALUE` – internal constant means that actually no value is provided to cache backend and thus backend should decide what timeout to use. Callable is also supported.
  * `tags` – sequence of strings or callable. Should provide or return list of tags added to cached value, so cache may be invalidated later with any tag name. Tag may support advanced string formatting syntax. See `cache_key` docs and examples for more details.
  * `prefix` – this parameter works both: as regular tag and also as cache key prefix, as usual advanced string formatting and callable are supported here.
- * `cache_alias` – cache backend alias name, it can also be [Django cache backend alias  name](https://docs.djangoproject.com/en/1.8/ref/settings/#std:setting-CACHES).
+ * `cache_alias` – cache backend alias name, it can also be [Django cache backend alias  name](https://docs.djangoproject.com/en/1.10/ref/settings/#std:setting-CACHES).
  * `cache_instance` – cache backend instance may be provided directly via this parameter.
 
 ### ecached_property
@@ -83,14 +85,18 @@ Parameters:
 # Simple examples
 
 Code examples is the best way to show the power of this package.
-Decorators can be simply used with default parameters only:
+
+### Decorators can be simply used with default parameters only
 
 ```python
 from easy_cache import ecached, create_cache_key
 
-# default parameters, cache key will be generated automatically:
-# <__module__>.<__class__>.<function name> + function parameters
-# converted to strings, so be careful when using complex objects, it's
+# default parameters
+# cache key will be generated automatically:
+#
+# <__module__>.<__class__>.<function name> + function parameters converted to strings,
+#
+# so be careful when using complex objects, it's
 # better to write custom cache key generator in such cases.
 #
 # timeout will be default for specified cache backend
@@ -109,7 +115,7 @@ def time_consuming_operation():
 def time_consuming_operation(*args, **kwargs):
     pass
 
-# use specific cache alias
+# use specific cache alias, see "caches framework" below
 from functools import partial
 
 memcached = partial(ecached, cache_alias='memcached')
@@ -118,7 +124,11 @@ memcached = partial(ecached, cache_alias='memcached')
 @memcached(['a', 'b'], timeout=600)
 def time_consuming_operation(a, b, c='default'):
     pass
+```
 
+### Using custom cache key generators
+
+```python
 # working with parameters provided to cached function
 # cache key generator must have the same signature as decorated function
 def custom_cache_key(self, a, b, c, d):
@@ -147,8 +157,12 @@ class A(object):
     @ecached(custom_cache_key_meta)
     def time_consuming_opeartion(self, a, b, c=10, d=20):
         pass
+```
 
-# How to cache static- and class-methods correctly
+### How to cache `staticmethod` and `classmethod` correctly
+
+```python
+# ecached decorator always comes topmost
 class B(object):
 
     # cache only for each different year
@@ -172,13 +186,14 @@ Meta object has the following parameters:
  * `args` – tuple with positional arguments provided to decorated function
  * `kwargs` – dictionary with keyword arguments provided to decorated function
  * `returned_value` – value returned from decorated function, available only
- when meta object is handled in `tags` or `prefix` generators. You have to check `has_returned_value` property before using
- this parameter:
+ when meta object is handled in `tags` or `prefix` generators. You have to check `has_returned_value` property before using this parameter:
+
  ```python
- def f(meta):
+ def generate_cache_key(meta):
      if meta.has_returned_value:
          # ... do something with meta.returned_value ...
  ```
+
  * `call_args` - dictionary with all positional and keyword arguments provided
  to decorated function, you may also access them via `__getitem__` dict interface, e. g. `meta['param1']`.
  * `function` - decorated callable
@@ -234,16 +249,19 @@ class User(models.Model):
         """
         return cls.objects.filter(state=state)
 
-    @ecached_property(timeout=3600)
+    @ecached_property('user_friends_count:{self.id}', timeout=3600)
     def friends_count(self):
         """
-            Caches friends count for 1 hour.
+            Caches friends count of each user for 1 hour.
 
             Call the following method, to invalidate cache:
-            >> User.friends_count.invalidate_cache_by_key()
+            >> User.friends_count.invalidate_cache_by_key(user)
             or
-            >> self.__class__.friends_count.invalidate_cache_by_key()
+            >> type(self).friends_count.invalidate_cache_by_key(user)
+            or
+            >> self.__class__.friends_count.invalidate_cache_by_key(user)
 
+            Where `user` is desired User instance to invalidate friends count of.
             Note that class object is used here instead of the instance.
         """
         return self.friends.count()
@@ -278,6 +296,7 @@ class User(models.Model):
                 >> invalidate_cache_key(create_cache_key('user_favorite_books', user.id))
                 or
                 >> invalidate_cache_key('user_favorite_books:{}'.format(user.id))
+
             2. Some information about favorite book was changed, e.g. its title:
                 >> from easy_cache import invalidate_cache_tags, create_tag_cache_key
                 >> tag_cache_key = create_tag_cache_key('book', changed_book_id)
@@ -388,17 +407,6 @@ invalidate_cache_tags(create_cache_key('tag', 10), cache_alias='memcached')
 invalidate_cache_prefix('pre:{}'.format(2), cache_alias='memcached')
 ```
 
-# Performance
-
-Benchmarking may be executed with `tox` command and it shows that decorators give
-about 4% of overhead in worst case and about 1-2% overhead on the average.
-
-If you don't use tags or prefix you will get one cache request for
-`get` and one request for `set` if result not found in cache, otherwise two
-consecutive requests will be made: `get` and `get_many` to receive actual
-value from cache and validate its tags (prefix). Then one `set_many` request will be
-performed to save a data to cache storage.
-
 
 # Internal caches framework
 
@@ -434,21 +442,22 @@ However if you don't use Django, there is cache framework build into
 easy-cache package, it may be used in the same fashion as Django caches:
 
 ```python
-# Custom cache instance class must implement the following methods:
-class CustomCache(object):
+# Custom cache instance class must implement AbstractCacheInstance interface:
+from easy_cache.abc import AbstractCacheInstance
+from easy_cache.core import DEFAULT_TIMEOUT, NOT_FOUND
 
-    def get(self, key, default):
-        ...
-        return value
+class CustomCache(AbstractCacheInstance):
 
-    def get_many(self, iterable):
-        ...
-        return {key1: value1, key2: value2, ...}
-
-    def set(self, key, value, timeout):
+    def get(self, key, default=NOT_FOUND):
         ...
 
-    def set_many(self, data_dict, timeout):
+    def get_many(self, keys):
+        ...
+
+    def set(self, key, value, timeout=DEFAULT_TIMEOUT):
+        ...
+
+    def set_many(self, data_dict, timeout=DEFAULT_TIMEOUT):
         ...
 
     def delete(self, key):
@@ -464,6 +473,20 @@ caches.set_default(CustomCacheDefault())
 @ecached(..., cache_alias='new_cache')
 # or
 @ecached(..., cache_instance=custom_cache)
+# will use `default` alias
+@ecached(...)
+```
+
+There is already implemented redis cache instance class, based on [redis-py client](https://pypi.python.org/pypi/redis):
+
+```python
+from redis import StrictRedis
+from easy_cache.contrib.redis_cache import RedisCacheInstance
+from easy_cache import caches
+
+redis_cache = RedisCacheInstance(StrictRedis(host='...', port='...'))
+caches.set_default(redis_cache)
+
 # will use `default` alias
 @ecached(...)
 ```
@@ -485,3 +508,43 @@ def dynamic_timeout(group):
 def get_users_by_group(group):
     ...
 ```
+
+# Development and contribution
+
+Live instances of Redis and Memcached are required for few tests to pass, so it's recommended to use docker to setup necessary environment:
+
+```shell
+> docker-machine ip default
+[IP] <- your DOCKER_HOST ip address
+
+> docker container create --name=easy_cache-redis -p 6379:6379 redis:latest
+> docker container start easy_cache-redis
+
+export EASY_CACHE_REDIS_HOST=[IP]:6379
+
+> docker container create --name=easy_cache-memcached -p 11211:11211 memcached:latest
+> docker container start easy_cache-memcached
+
+export EASY_CACHE_MEMCACHED_HOST=[IP]:11211
+
+# to enable debug logs
+# export EASY_CACHE_DEBUG="yes"
+
+# install package localy
+pip install -e .[tests]
+
+# run tests with pytest or tox
+pytest
+tox
+```
+
+# Performance and overhead
+
+Benchmarking may be executed with `tox` command and it shows that decorators give
+about 4% of overhead in worst case and about 1-2% overhead on the average.
+
+If you don't use tags or prefix you will get one cache request for
+`get` and one request for `set` if result not found in cache, otherwise two
+consecutive requests will be made: `get` and `get_many` to receive actual
+value from cache and validate its tags (prefix). Then one `set_many` request will be
+performed to save a data to cache storage.

@@ -1,17 +1,21 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, print_function
+
 import math
 from contextlib import contextmanager
 from timeit import default_timer
+from redis import StrictRedis
 
 import six
-
-from easy_cache.decorators import ecached
-
+from django.conf import settings
 # noinspection PyUnresolvedReferences
 from six.moves import xrange
 
-from django.conf import settings
+from easy_cache import caches
+from easy_cache.contrib.redis_cache import RedisCacheInstance
+from easy_cache.decorators import ecached
+
+from tests.conf import REDIS_HOST, MEMCACHED_HOST
 
 
 settings.configure(
@@ -30,12 +34,12 @@ settings.configure(
         },
         'memcached': {
             'BACKEND': 'django.core.cache.backends.memcached.MemcachedCache',
-            'LOCATION': '192.168.99.100:11211',
+            'LOCATION': MEMCACHED_HOST,
             'KEY_PREFIX': 'memcached',
         },
         'redis': {
             'BACKEND': 'django_redis.cache.RedisCache',
-            'LOCATION': 'redis://192.168.99.100:6379/1',
+            'LOCATION': 'redis://{}/1'.format(REDIS_HOST),
             'OPTIONS': {
                 'CLIENT_CLASS': 'django_redis.client.DefaultClient',
             }
@@ -43,6 +47,14 @@ settings.configure(
     },
     ROOT_URLCONF='',
     INSTALLED_APPS=()
+)
+
+
+# adds custom redis client
+redis_host, redis_port = REDIS_HOST.split(':')
+caches['redis_client'] = RedisCacheInstance(
+    StrictRedis(host=redis_host, port=redis_port),
+    prefix='bench'
 )
 
 
@@ -130,6 +142,11 @@ def test_redis_cache():
     return time_consuming_operation()
 
 
+@ecached(cache_alias='redis_client')
+def test_redis_client_cache():
+    return time_consuming_operation()
+
+
 @ecached(cache_alias='default', tags=['tag1', 'tag2'])
 def test_locmem_cache_tags():
     return time_consuming_operation()
@@ -142,6 +159,11 @@ def test_memcached_cache_tags():
 
 @ecached(cache_alias='redis', tags=['tag1', 'tag2'])
 def test_redis_cache_tags():
+    return time_consuming_operation()
+
+
+@ecached(cache_alias='redis_client', tags=['tag1', 'tag2'])
+def test_redis_client_cache_tags():
     return time_consuming_operation()
 
 
@@ -162,6 +184,8 @@ def main():
         (test_memcached_cache_tags, 1),
         (test_redis_cache, 1),
         (test_redis_cache_tags, 1),
+        (test_redis_client_cache, 1),
+        (test_redis_client_cache_tags, 1),
     )
 
     def cleanup(function):

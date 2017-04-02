@@ -9,13 +9,6 @@ from setuptools import setup, find_packages
 import versioneer
 
 
-if sys.argv[-1] == 'test':
-    # python-mock is required to run unit-tests
-    import unittest
-    os.environ['EASY_CACHE_LAZY_MODE_ENABLE'] = 'yes'
-    unittest.main('easy_cache.tests', argv=sys.argv[:-1])
-
-
 def get_long_description():
     with io.open('./README.md', encoding='utf-8') as f:
         readme = f.read()
@@ -45,7 +38,7 @@ def get_long_description():
 
 tests_require = [
     'pytest==3.0.4',
-    'Django==1.8.3',
+    'Django==1.10',
     'django-redis==4.2.0',
     'memory-profiler==0.33',
     'mock==1.0.1',
@@ -59,7 +52,7 @@ tests_require = [
 
 setup(
     name='easy-cache',
-    packages=find_packages('easy_cache'),
+    packages=find_packages(exclude=('tests', )),
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
     description='Useful cache decorators for methods and properties',
@@ -71,12 +64,13 @@ setup(
     platforms='Platform Independent',
     license='MIT',
     classifiers=[
-        'Development Status :: 4 - Beta',
+        'Development Status :: 5 - Production/Stable',
         'Environment :: Web Environment',
         'Operating System :: OS Independent',
         'Programming Language :: Python',
         'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3.4',
+        'Programming Language :: Python :: 3.5',
+        'Programming Language :: Python :: 3.6',
         'Topic :: Software Development :: Libraries :: Python Modules',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: MIT License'

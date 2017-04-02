@@ -13,23 +13,30 @@ PY34 = sys.version_info[0:2] == (3, 4)
 PY35 = sys.version_info[0:2] >= (3, 5)
 
 
-def force_text(obj):
+def force_text(obj, encoding='utf-8'):
     if isinstance(obj, six.text_type):
         return obj
-    try:
+    elif not isinstance(obj, six.binary_type):
         return six.text_type(obj)
+
+    try:
+        return six.text_type(obj, encoding=encoding)
     except UnicodeDecodeError:
-        return obj.decode('utf-8')
+        return obj.decode(encoding)
 
 
-def force_binary(obj):
+def force_binary(obj, encoding='utf-8'):
     if isinstance(obj, six.binary_type):
         return obj
+    elif not isinstance(obj, six.text_type):
+        return six.binary_type(obj)
 
     try:
+        if PY3:
+            return six.binary_type(obj, encoding=encoding)
         return six.binary_type(obj)
     except UnicodeEncodeError:
-        return obj.encode('utf-8')
+        return obj.encode(encoding)
 
 
 if PY3:

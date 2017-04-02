@@ -201,7 +201,7 @@ class MetaCallable(collections.Mapping):
 
 class TaggedCacheProxy(object):
     """ Each cache key/value pair can have additional tags to check
-     if cached values is still valid.
+        if cached values is still valid.
     """
     def __init__(self, cache_instance):
         """
@@ -219,7 +219,7 @@ class TaggedCacheProxy(object):
 
         # set new timestamps for missed tags
         for tag_key in tags:
-            if tag_key not in tags_dict:
+            if tags_dict.get(tag_key) is None:
                 # this should be sent to cache as separate key-value
                 data[tag_key] = get_timestamp()
 
