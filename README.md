@@ -1,5 +1,7 @@
 # Easy caching decorators
 
+[![Build Status](https://travis-ci.org/Bahus/easy_cache.svg?branch=master)](https://travis-ci.org/Bahus/easy_cache)
+
 This package is intended to simplify caching and invalidation process in python-based (primarily) web applications. It's possible to cache execution results of functions; *instance*, *class* and *static* methods; properties. Cache keys may be constructed in various different ways and may depend on any number of parameters.
 
 The package supports tag-based cache invalidation and better works with Django, however any other frameworks can be used – see examples below.

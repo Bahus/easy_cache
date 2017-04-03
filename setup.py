@@ -38,7 +38,7 @@ def get_long_description():
 
 tests_require = [
     'pytest==3.0.4',
-    'Django==1.10',
+    'Django',
     'django-redis==4.2.0',
     'memory-profiler==0.33',
     'mock==1.0.1',
