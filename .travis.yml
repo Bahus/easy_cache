@@ -1,0 +1,15 @@
+language: python
+python:
+  - "2.7"
+  - "3.5"
+  - "3.6"
+services:
+  - memcached
+  - redis-server
+install:
+  - pip install .[tests]
+env:
+  global:
+    - EASY_CACHE_REDIS_HOST=127.0.0.1:6379
+    - EASY_CACHE_MEMCACHED_HOST=127.0.0.1:11211
+script: pytest -vv
