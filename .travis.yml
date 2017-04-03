@@ -7,7 +7,7 @@ services:
   - memcached
   - redis-server
 install:
-  - pip install .[tests]
+  - pip install -e .[tests]
 env:
   global:
     - EASY_CACHE_REDIS_HOST=127.0.0.1:6379
