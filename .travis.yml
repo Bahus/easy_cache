@@ -7,7 +7,7 @@ services:
   - memcached
   - redis-server
 install:
-  - pip install Django=$DJANGO_VERSION
+  - pip install Django==$DJANGO_VERSION
   - pip install -e .[tests]
 env:
   matrix:
