@@ -18,4 +18,3 @@ from easy_cache.core import (
 )
 
 from easy_cache.decorators import ecached, ecached_property, meta_accepted
-

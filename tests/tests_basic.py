@@ -844,6 +844,27 @@ class ClassCachedDecoratorTest(TestCase):
         self._check_cache_key(cache_callable, cache_key, 4, 5, 6)
         self._check_timeout(cache_key, 4 * 100)
 
+    def test_refresh_cache(self):
+        counter = 0
+
+        @ecached()
+        def counter_func():
+            nonlocal counter
+            result = 'Calls counter {}'.format(counter)
+            counter += 1
+            return result
+        cache_callable = counter_func
+        first_result = 'Calls counter 0'
+        second_result = 'Calls counter 1'
+
+        self.cache.reset_mock()
+
+        result = counter_func()
+        self.assertEqual(result, first_result)
+        refreshed_result = cache_callable.refresh_cache()
+        self.assertEqual(refreshed_result, second_result)
+        self.cache.reset_mock()
+
 
 # Django-related part
 from django.conf import settings
