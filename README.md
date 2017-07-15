@@ -11,7 +11,7 @@ The package supports tag-based cache invalidation and better works with Django, 
 Library was tested in the following environments:
 
  * Python 2.7, 3.5, 3.6
- * Django 1.8, 1.9, 1.10
+ * Django 1.8, 1.9, 1.10, 1.11
 
 Feel free to try it in yours, but it's not guaranteed it will work. Submit an issue if you think it should.
 
@@ -248,17 +248,12 @@ class User(models.Model):
             >> User.get_users_by_state.invalidate_cache_by_tags('users_by_states')
 
             `invalidate_cache_by_tags` supports both string and list parameter types.
-            
-            To refresh concrete cached state cal the following method
+
+            To refresh concrete cached state call the following method
             with required `state`, e.g:
             >> User.get_users_by_state.refresh_cache('active')
             or
             >> User.get_users_by_state.refresh_cache(state='active')
-
-            If you'd like to invalidate all caches for all states call:
-            >> User.get_users_by_state.refresh_cache('users_by_states')
-
-            `refresh_cache` supports both string and list parameter types.
         """
         return cls.objects.filter(state=state)
 
@@ -327,17 +322,10 @@ class User(models.Model):
                 or
                 >> invalidate_cache_tags(tag_cache_key)
 
-            You may want to refresh this cache in two cases:
-
-            1. User adds new book to favorites:
+            To refresh cached values use the following patterns:
                 >> User.get_favorite_books.refresh_cache(user)
                 or
                 >> User.get_favorite_books.refresh_cache(self=user)
-
-            2. Some information about favorite book was changed, e.g. its title:
-                >> from easy_cache import refresh_cache, create_tag_cache_key
-                >> tag_cache_key = create_tag_cache_key('book', changed_book_id)
-                >> User.get_favorite_books.refresh_cache(tag_cache_key)
         """
         return self.favorite_books.filter(user=self)
 
@@ -449,6 +437,7 @@ invalidate_cache_prefix('pre:{}'.format(2), cache_alias='memcached')
 ```
 
 # Refresh summary
+
 There is one way to refresh cache objects: use refresh methods bound to
 decorated function.
 
@@ -466,8 +455,8 @@ class A:
         pass
 
 A.method.refresh_cache()
+A.obj_property.refresh_cache()
 ```
-
 
 # Internal caches framework
 
