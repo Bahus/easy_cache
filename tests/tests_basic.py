@@ -844,6 +844,29 @@ class ClassCachedDecoratorTest(TestCase):
         self._check_cache_key(cache_callable, cache_key, 4, 5, 6)
         self._check_timeout(cache_key, 4 * 100)
 
+    def test_refresh_cache(self):
+        a, b = u'a', u'b'
+        cache_callable = ordinal_func
+
+        self.cache.reset_mock()
+
+        result = process_args(a=a, b=b)
+
+        self.assertEqual(cache_callable(a=a, b=b), result)
+        self.cache.assert_called_once_with(result)
+        self.cache.reset_mock()
+
+        # cached version
+        self.assertEqual(cache_callable(a=a, b=b), result)
+        self.assertFalse(self.cache.called)
+        self.cache.reset_mock()
+
+        # refresh cache via cache key
+        cache_callable.refresh_cache(a=a, b=b)
+        self.cache.assert_called_once_with(result)
+        self.assertEqual(cache_callable(a=a, b=b), result)
+        self.cache.assert_called_once_with(result)
+        self.cache.reset_mock()
 
 # Django-related part
 from django.conf import settings

@@ -489,6 +489,15 @@ class Cached(object):
         cache_key = self.generate_cache_key(callable_meta)
         return self.cache_instance.delete(cache_key)
 
+    def refresh_cache(self, *args, **kwargs):
+        callable_meta = self.collect_meta(args, kwargs)
+        cache_key = self.generate_cache_key(callable_meta)
+
+        value = self.function(*callable_meta.args, **callable_meta.kwargs)
+        callable_meta.returned_value = value
+        self.set_cached_value(cache_key, callable_meta)
+        return value
+
     def __unicode__(self):
         return (
             '<Cached: callable="{}", cache_key="{}", timeout={}>'.format(

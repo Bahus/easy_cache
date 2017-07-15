@@ -201,7 +201,7 @@ Meta object has the following parameters:
  * `function` - decorated callable
  * `scope` - object to which decorated callable is attached, `None` otherwise. Usually it's an instance or a class.
 
-# Tags invalidation and cached properties
+# Tags invalidation, refresh and cached properties
 
 More complex examples introducing Django models and effective tags usage.
 Check code comments and doc-strings for detailed description.
@@ -248,6 +248,17 @@ class User(models.Model):
             >> User.get_users_by_state.invalidate_cache_by_tags('users_by_states')
 
             `invalidate_cache_by_tags` supports both string and list parameter types.
+            
+            To refresh concrete cached state cal the following method
+            with required `state`, e.g:
+            >> User.get_users_by_state.refresh_cache('active')
+            or
+            >> User.get_users_by_state.refresh_cache(state='active')
+
+            If you'd like to invalidate all caches for all states call:
+            >> User.get_users_by_state.refresh_cache('users_by_states')
+
+            `refresh_cache` supports both string and list parameter types.
         """
         return cls.objects.filter(state=state)
 
@@ -264,6 +275,16 @@ class User(models.Model):
             >> self.__class__.friends_count.invalidate_cache_by_key(user)
 
             Where `user` is desired User instance to invalidate friends count of.
+            Note that class object is used here instead of the instance.
+
+            Call the following method, to refresh cache:
+            >> User.friends_count.refresh_cache(user)
+            or
+            >> type(self).friends_count.refresh_cache(user)
+            or
+            >> self.__class__.friends_count.refresh_cache(user)
+
+            Where `user` is desired User instance to refresh friends count of.
             Note that class object is used here instead of the instance.
         """
         return self.friends.count()
@@ -305,6 +326,18 @@ class User(models.Model):
                 >> User.get_favorite_books.invalidate_cache_by_tags(tag_cache_key)
                 or
                 >> invalidate_cache_tags(tag_cache_key)
+
+            You may want to refresh this cache in two cases:
+
+            1. User adds new book to favorites:
+                >> User.get_favorite_books.refresh_cache(user)
+                or
+                >> User.get_favorite_books.refresh_cache(self=user)
+
+            2. Some information about favorite book was changed, e.g. its title:
+                >> from easy_cache import refresh_cache, create_tag_cache_key
+                >> tag_cache_key = create_tag_cache_key('book', changed_book_id)
+                >> User.get_favorite_books.refresh_cache(tag_cache_key)
         """
         return self.favorite_books.filter(user=self)
 
@@ -335,8 +368,14 @@ class Shop(models.Model):
 # Invalidate cached list of goods for concrete shop
 Shop.get_all_goods_list.invalidate_cache_by_key(shop)
 
+# Refresh cached list of goods for concrete shop
+Shop.get_all_goods_list.refresh_cache(shop)
+
 # Invalidate cached list of prices for concrete shop
 Shop.get_all_prices_list.invalidate_cache_by_key(shop)
+
+# Refresh cached list of prices for concrete shop
+Shop.get_all_prices_list.refresh_cache(shop)
 
 # Invalidate all cached items for concrete shop
 Shop.get_all_goods_list.invalidate_cache_by_prefix(shop)
@@ -407,6 +446,26 @@ invalidate_cache_key(
 )
 invalidate_cache_tags(create_cache_key('tag', 10), cache_alias='memcached')
 invalidate_cache_prefix('pre:{}'.format(2), cache_alias='memcached')
+```
+
+# Refresh summary
+There is one way to refresh cache objects: use refresh methods bound to
+decorated function.
+
+```python
+<decorated>.refresh_cache(*args, **kwargs)
+
+# <decorated> should be used with class instance if it is used in class namespace:
+class A:
+    @ecached()
+    def method(self):
+        pass
+
+    @ecached_property()
+    def obj_property(self):
+        pass
+
+A.method.refresh_cache()
 ```
 
 
