@@ -1,6 +1,5 @@
 language: python
 python:
-  - "2.7"
   - "3.5"
   - "3.6"
 services:
@@ -12,9 +11,8 @@ install:
 env:
   matrix:
     - DJANGO_VERSION=1.8
-    - DJANGO_VERSION=1.9
-    - DJANGO_VERSION=1.10
     - DJANGO_VERSION=1.11
+    - DJANGO_VERSION=2.0.0
   global:
     - EASY_CACHE_REDIS_HOST=127.0.0.1:6379
     - EASY_CACHE_MEMCACHED_HOST=127.0.0.1:11211

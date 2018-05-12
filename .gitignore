@@ -57,3 +57,5 @@ target/
 # idea
 .idea/
 .python-version
+.vscode
+.pytest_cache
