@@ -329,12 +329,13 @@ class Cached(object):
         cached_value = self.get_cached_value(cache_key)
 
         if cached_value is NOT_FOUND:
+            logger.debug('MISS cache_key="%s"', cache_key)
             value = self.function(*callable_meta.args, **callable_meta.kwargs)
             callable_meta.returned_value = value
             self.set_cached_value(cache_key, callable_meta)
             return value
 
-        logger.debug('Hit cache_key="%s"', cache_key)
+        logger.debug('HIT cache_key="%s"', cache_key)
         return cached_value
 
     def create_cache_key(self, *args, **kwargs):
@@ -493,6 +494,7 @@ class Cached(object):
         callable_meta = self.collect_meta(args, kwargs)
         cache_key = self.generate_cache_key(callable_meta)
 
+        logger.debug('REFRESH cache_key="%s"', cache_key)
         value = self.function(*callable_meta.args, **callable_meta.kwargs)
         callable_meta.returned_value = value
         self.set_cached_value(cache_key, callable_meta)
