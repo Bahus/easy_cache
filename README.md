@@ -415,6 +415,8 @@ There are two ways to invalidate cache objects: use invalidation methods bound t
 
 # <decorated> should be used with a class instance if it is used in a class namespace:
 class A:
+    id = 1
+    
     @ecached()
     def method(self):
         pass
@@ -422,12 +424,19 @@ class A:
     @ecached_property()
     def obj_property(self):
         pass
+        
+    @ecached_property('{self.id}:hello')
+    def world(self):
+        return '<timeconsuming>'
 
 A.method.invalidate_cache_by_key()
 # or
 A().method.invalidate_cache_by_key()
-# only one variant is possible for a property
+# only one variant is possible for a properties
 A.obj_property.invalidate_cache_by_key()
+# and
+item = A()
+A.world.invalidate_cache_by_key(item)
 
 # and
 from easy_cache import (

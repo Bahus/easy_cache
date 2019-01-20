@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import collections
 import logging
-import os
 import random
 import sys
 import six
@@ -326,6 +325,11 @@ class User(object):
         cache_mock()
         return 15
 
+    @ecached_property('{self.id}:friends', 666)
+    def friends(self):
+        cache_mock()
+        return ['Ivan', 'Sergey', 'Semen']
+
     @ecached_property('static_key')
     def property_no_tags(self):
         cache_mock()
@@ -386,6 +390,7 @@ class ClassCachedDecoratorTest(TestCase):
 
     def tearDown(self):
         self.local_cache.clear()
+        self.cache.reset_mock()
 
     def _check_base(self, method, param_to_change=None):
         self.cache.reset_mock()
@@ -421,15 +426,16 @@ class ClassCachedDecoratorTest(TestCase):
         self.cache.reset_mock()
 
     def _check_cache_key(self, _callable, cache_key, *args, **kwargs):
+        invalidator = kwargs.pop('invalidator', None)
+
         self.local_cache.clear()
         self.assertNotIn(cache_key, self.local_cache)
 
         _callable(*args, **kwargs)
         self.assertIn(cache_key, self.local_cache)
 
-        as_property = getattr(_callable, 'property', False)
-        if as_property:
-            invalidate_cache_key(cache_key)
+        if invalidator:
+            invalidator()
         else:
             _callable.invalidate_cache_by_key(*args, **kwargs)
 
@@ -534,19 +540,18 @@ class ClassCachedDecoratorTest(TestCase):
         self.assertEqual(self.user.test_property, 'property')
 
         cache_callable = lambda: getattr(self.user, 'test_property')
-        cache_callable.property = True
-
         cache_key = create_cache_key(__name__ + '.User.test_property')
 
-        self._check_cache_key(cache_callable, cache_key)
+        self._check_cache_key(cache_callable, cache_key,
+                              invalidator=User.test_property.invalidate_cache_by_key)
 
         self.local_cache.clear()
         self.cache.reset_mock()
 
         self.assertEqual(self.user.test_property, 'property')
         self.cache.assert_called_once_with('property')
-
         self.cache.reset_mock()
+
         self.assertEqual(self.user.test_property, 'property')
         self.assertFalse(self.cache.called)
 
@@ -635,7 +640,6 @@ class ClassCachedDecoratorTest(TestCase):
 
     def test_property_friends_count(self):
         self.assertEqual(self.user.friends_count, 15)
-
         cache_callable = lambda: getattr(self.user, 'friends_count')
         cache_callable.property = True
         cache_callable.invalidate_cache_by_prefix = User.friends_count.invalidate_cache_by_prefix
@@ -643,19 +647,54 @@ class ClassCachedDecoratorTest(TestCase):
         cache_prefix = 'USER_PROPERTY'
         cache_key = create_cache_key(cache_prefix, self.user.id, 'friends_count')
 
-        self._check_cache_key(cache_callable, cache_key)
+        self._check_cache_key(
+            cache_callable,
+            cache_key,
+            invalidator=partial(User.friends_count.invalidate_cache_by_key, self.user)
+        )
         self._check_timeout(cache_key, 100)
         # noinspection PyTypeChecker
         self._check_cache_prefix(cache_callable, cache_prefix)
+
+    def test_property_friends(self):
+        friends_list = ['Ivan', 'Sergey', 'Semen']
+
+        self.assertListEqual(self.user.friends, friends_list)
+
+        self.cache.assert_called_once_with()
+        self.cache.reset_mock()
+
+        self.assertListEqual(self.user.friends, friends_list)
+        self.cache.assert_not_called()
+        self.cache.reset_mock()
+
+        User.friends.invalidate_cache_by_key(self.user)
+        self.assertListEqual(self.user.friends, friends_list)
+        self.cache.assert_called_once_with()
+        self.cache.reset_mock()
+
+        cache_callable = lambda: getattr(self.user, 'friends')
+        cache_callable.property = True
+        cache_key = create_cache_key(self.user.id, 'friends')
+
+        self._check_cache_key(
+            cache_callable,
+            cache_key,
+            invalidator=partial(User.friends.invalidate_cache_by_key, self.user)
+        )
+        self._check_timeout(cache_key, 666)
 
     def test_property_no_tags(self):
         self.assertEqual(self.user.property_no_tags, '42')
 
         cache_callable = lambda: getattr(self.user, 'property_no_tags')
-        cache_callable.property = True
         cache_key = create_cache_key('static_key')
 
-        self._check_cache_key(cache_callable, cache_key)
+        self._check_cache_key(
+            cache_callable,
+            cache_key,
+            invalidator=partial(User.property_no_tags.invalidate_cache_by_key)
+        )
 
     def test_class_method_key_string(self):
         cache_callable = User.class_method_cache_key_string
