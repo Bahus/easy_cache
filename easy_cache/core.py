@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
-import collections
+from collections import abc
 import inspect
 import logging
 import os
@@ -106,7 +106,7 @@ caches = CacheHandler()
 
 # setters
 def set_cache_key_delimiter(delimiter):
-    if not isinstance(delimiter, six.string_types):
+    if not isinstance(delimiter, str):
         raise TypeError('Invalid delimiter type, string required')
 
     global CACHE_KEY_DELIMITER
@@ -114,7 +114,7 @@ def set_cache_key_delimiter(delimiter):
 
 
 def set_tag_key_prefix(prefix):
-    if not isinstance(prefix, six.string_types):
+    if not isinstance(prefix, str):
         raise TypeError('Invalid tag prefix type, string required')
 
     global TAG_KEY_PREFIX
@@ -139,7 +139,7 @@ def invalidate_cache_prefix(prefix, cache_instance=None, cache_alias=None):
 
 
 def invalidate_cache_tags(tags, cache_instance=None, cache_alias=None):
-    if isinstance(tags, six.string_types):
+    if isinstance(tags, str):
         tags = [tags]
 
     _cache = TaggedCacheProxy(cache_instance or caches[cache_alias or DEFAULT_CACHE_ALIAS])
@@ -150,7 +150,7 @@ def create_cache_key(*parts):
     """ Generate cache key using global delimiter char """
     if len(parts) == 1:
         parts = parts[0]
-        if isinstance(parts, six.string_types):
+        if isinstance(parts, str):
             parts = [parts]
 
     return CACHE_KEY_DELIMITER.join(force_text(p) for p in parts)
@@ -169,7 +169,7 @@ def compare_dicts(d1, d2):
     return dict(d1) == dict(d2)
 
 
-class MetaCallable(collections.Mapping):
+class MetaCallable(abc.Mapping):
     """ Object contains meta information about method or function decorated with ecached,
         passed arguments, returned results, signature description and so on.
     """
@@ -362,7 +362,7 @@ class Cached(object):
         if self.instance:
             # first argument in args is "self"
             args = (self.instance, ) + args
-        elif self.klass:
+        elif self.klass and not type(self.function) == staticmethod:
             # firs argument in args is "cls"
             args = (self.klass, ) + args
 
@@ -446,7 +446,7 @@ class Cached(object):
         if isinstance(template, (staticmethod, classmethod)):
             template = template.__func__
 
-        if isinstance(template, collections.Callable):
+        if isinstance(template, abc.Callable):
             if self._check_if_meta_required(template):
                 return template(meta)
             else:
@@ -456,7 +456,7 @@ class Cached(object):
             return template
 
         try:
-            if isinstance(template, six.string_types):
+            if isinstance(template, str):
                 return force_text(template).format(**meta.call_args)
             elif isinstance(template, (list, tuple, set)):
                 return [force_text(t).format(**meta.call_args) for t in template]
@@ -495,7 +495,10 @@ class Cached(object):
         meta.scope = self.scope
 
         try:
-            meta.call_args = inspect.getcallargs(self.function, *args, **kwargs)
+            signature = inspect.signature(self.function)
+            bound_args = signature.bind(*args, **kwargs).arguments
+            bound_args.update(default_kwargs)
+            meta.call_args = bound_args
         except TypeError:
             # sometimes not all required parameters are provided, just ignore them
             meta.call_args = meta.kwargs
@@ -519,18 +522,13 @@ class Cached(object):
         self.set_cached_value(cache_key, callable_meta)
         return value
 
-    def __unicode__(self):
+    def __str__(self):
         return (
             '<Cached: callable="{}", cache_key="{}", timeout={}>'.format(
                 get_function_path(self.function, self.scope),
                 get_function_path(self.cache_key_template),
                 self.timeout)
         )
-
-    def __str__(self):
-        if six.PY2:
-            return force_binary(self.__unicode__())
-        return self.__unicode__()
 
     def __repr__(self):
         try:
@@ -591,7 +589,7 @@ class TaggedCached(Cached):
             raise ValueError('Tags were not specified, nothing to invalidate')
 
         def to_set(obj):
-            return set([obj] if isinstance(obj, six.string_types) else obj)
+            return set([obj] if isinstance(obj, str) else obj)
 
         callable_meta = self.collect_meta(args, kwargs)
         all_tags = to_set(self._format(self.tags, callable_meta))
@@ -630,8 +628,8 @@ class TaggedCached(Cached):
 
         return super(TaggedCached, self).set_cached_value(cache_key, callable_meta, tags=tags)
 
-    def __unicode__(self):
-        return six.text_type(
+    def __str__(self):
+        return str(
             '<TaggedCached: callable="{}", cache_key="{}", tags="{}", prefix="{}", '
             'timeout={}>'.format(
                 get_function_path(self.function, self.scope),

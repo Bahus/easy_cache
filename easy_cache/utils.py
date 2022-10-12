@@ -1,14 +1,11 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
-import six
 
 
 def get_function_path(function, bound_to=None):
     """Get received function path (as string), to import function later
     with `import_string`.
     """
-    if isinstance(function, six.string_types):
+    if isinstance(function, str):
         return function
 
     # static and class methods
@@ -27,12 +24,12 @@ def get_function_path(function, bound_to=None):
 
     if not bound_to:
         try:
-            bound_to = six.get_method_self(function)
+            bound_to = function.__self__
         except AttributeError:
             pass
 
     if bound_to:
-        if isinstance(bound_to, six.class_types):
+        if isinstance(bound_to, type):
             func_path.append(bound_to.__name__)
         else:
             func_path.append(bound_to.__class__.__name__)

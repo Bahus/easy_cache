@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-import collections
-import six
+from collections import abc
 from functools import update_wrapper
 
 from easy_cache.core import Cached, TaggedCached, DEFAULT_TIMEOUT, META_ACCEPTED_ATTR
@@ -75,7 +74,7 @@ class ecached(object):
                     self._instance = None
                     self._class = None
                 else:
-                    wrapped = six.get_method_function(wrapped)
+                    wrapped = wrapped.__func__
             else:
                 wrapped = self._func
 
@@ -90,7 +89,7 @@ class ecached(object):
     def __call__(self, func):
         self._func = func
 
-        if isinstance(func, collections.Callable):
+        if isinstance(func, abc.Callable):
             return self.wrapper()
 
         return self

@@ -6,17 +6,13 @@ from contextlib import contextmanager
 from timeit import default_timer
 from redis import StrictRedis
 
-import six
 from django.conf import settings
-# noinspection PyUnresolvedReferences
-from six.moves import xrange
 
 from easy_cache import caches
 from easy_cache.contrib.redis_cache import RedisCacheInstance
 from easy_cache.decorators import ecached
 
 from tests.conf import REDIS_HOST, MEMCACHED_HOST
-
 
 settings.configure(
     DEBUG=True,
@@ -33,7 +29,7 @@ settings.configure(
             'KEY_PREFIX': 'custom_prefix',
         },
         'memcached': {
-            'BACKEND': 'django.core.cache.backends.memcached.MemcachedCache',
+            'BACKEND': "django.core.cache.backends.memcached.PyMemcacheCache",
             'LOCATION': MEMCACHED_HOST,
             'KEY_PREFIX': 'memcached',
         },
@@ -74,18 +70,12 @@ class Stopwatch(object):
         self.t0 = default_timer()
         self.laps = []
 
-    def __unicode__(self):
+    def __str__(self):
         m = self.mean()
         d = self.stddev()
         a = self.median()
         fmt = u'%-37s: mean=%0.5f, median=%0.5f, stddev=%0.5f, n=%3d, snr=%8.5f:%8.5f'
         return fmt % ((self.name, m, a, d, len(self.laps)) + ratio(m, d))
-
-    def __str__(self):
-        if six.PY2:
-            return six.binary_type(self.__unicode__())
-        else:
-            return self.__unicode__()
 
     def mean(self):
         return sum(self.laps) / len(self.laps)
@@ -119,7 +109,7 @@ c = 0
 def time_consuming_operation():
     global c
     c += 1
-    a = sum(xrange(1000000))
+    a = sum(range(1000000))
     return str(a)
 
 
@@ -199,7 +189,7 @@ def main():
         cleanup(method)
         c = 0
 
-        for _ in xrange(n):
+        for _ in range(n):
             with sw1.timing():
                 method()
             cleanup(method)
@@ -211,7 +201,7 @@ def main():
         cleanup(method)
         c = 0
 
-        for _ in xrange(n):
+        for _ in range(n):
             # skip first time
             if _ == 0:
                 method()

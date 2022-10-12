@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
-import collections
+from collections import abc
 import logging
 import random
 import sys
-import six
+
+import django
 
 from functools import partial
 from mock import Mock
 from unittest import TestCase, skipIf
 
 from tests.conf import DEBUG, REDIS_HOST, MEMCACHED_HOST
-
 
 from easy_cache import ecached, ecached_property, meta_accepted
 from easy_cache import (
@@ -26,8 +26,7 @@ from easy_cache.core import (
     DEFAULT_TIMEOUT,
     MetaCallable,
 )
-from easy_cache.compat import force_text
-
+from easy_cache.compat import force_text, getargspec
 
 cache_mock = Mock()
 
@@ -62,7 +61,7 @@ class CacheProxy(object):
 
     @property
     def is_locmem(self):
-        return isinstance(getattr(self._cache, '_cache', None), collections.MutableMapping)
+        return isinstance(getattr(self._cache, '_cache', None), abc.MutableMapping)
 
     @property
     def is_memcache(self):
@@ -73,6 +72,16 @@ class CacheProxy(object):
             return False
 
         return isinstance(getattr(self._cache, '_cache', None), Client)
+
+    @property
+    def is_pymemcache(self):
+        try:
+            # noinspection PyUnresolvedReferences
+            from pymemcache.client.hash import HashClient
+        except ImportError:
+            return False
+
+        return isinstance(getattr(self._cache, '_cache', None), HashClient)
 
     @property
     def is_pylibmc(self):
@@ -182,7 +191,7 @@ class CacheProxy(object):
         return self._timeouts.keys()
 
     def with_key_prefix(self, value=''):
-        if self.is_memcache or self.is_pylibmc:
+        if self.is_memcache or self.is_pylibmc or self.is_pymemcache:
             return self._cache.key_func(value, self._cache.key_prefix, self._cache.version)
         return ''
 
@@ -191,7 +200,7 @@ class CacheProxy(object):
             return len(self._cache)
         elif self.is_locmem:
             return len(self._cache._cache)
-        elif self.is_memcache or self.is_pylibmc:
+        elif self.is_memcache or self.is_pylibmc or self.is_pymemcache:
             # special case
             keys = self.get_all_keys()
             # prefix = self.with_key_prefix()
@@ -401,7 +410,15 @@ class ClassCachedDecoratorTest(TestCase):
         a, b, c = items[:3]
 
         result = process_args(a, b, c)
-
+        # argspec = getargspec(method.function)
+        # start_arg_idx = 0
+        # if len(argspec.args) == 4:
+        #     start_arg_idx = 1
+        # params = {
+        #     argspec.args[start_arg_idx]: a,
+        #     argspec.args[start_arg_idx + 1]: b,
+        #     argspec.args[start_arg_idx + 2]: c,
+        # }
         self.assertEqual(method(a, b, c), result)
         self.cache.assert_called_once_with(result)
         self.cache.reset_mock()
@@ -942,10 +959,14 @@ class DjangoLocMemCacheTest(ClassCachedDecoratorTest, SimpleTestCase):
         return CacheProxy(cache, DEBUG)
 
 
+@skipIf(
+    (django.VERSION[0] > 3),
+    'This test should only be executed for Django >3.2'
+)
 @override_settings(
     CACHES={
         'default': {
-            'BACKEND': 'django.core.cache.backends.memcached.MemcachedCache',
+            'BACKEND': "django.core.cache.backends.memcached.MemcachedCache",
             'LOCATION': MEMCACHED_HOST,
             'KEY_PREFIX': 'memcached',
         }
@@ -968,6 +989,23 @@ class LivePyLibMCTest(DjangoLocMemCacheTest):
     """ Uses local memcached instance as cache backend """
 
 
+@skipIf(
+    (django.VERSION[0] <= 3),
+    'This test should only be executed for Django version >= 3.2'
+)
+@override_settings(
+    CACHES={
+        'default': {
+            'BACKEND': 'django.core.cache.backends.memcached.PyMemcacheCache',
+            'LOCATION': MEMCACHED_HOST,
+            'KEY_PREFIX': 'pylibmc',
+        }
+    }
+)
+class LivePyMemcachedTest(DjangoLocMemCacheTest):
+    """ Uses local memcached instance as cache backend """
+
+
 @override_settings(
     CACHES={
         'default': {
@@ -984,57 +1022,7 @@ class LiveRedisTest(DjangoLocMemCacheTest):
 
 
 class MiscellaneousTest(TestCase):
-
-    @skipIf(six.PY3, 'This test should only be executed in Python 2')
-    def test_class_repr_py2(self):
-        self.assertEqual(
-            repr(User.class_method_full_spec),
-            '<TaggedCached: '
-            'callable="' + __name__ + '.User.class_method_full_spec", '
-            'cache_key="{cls.name}:{a}", tags="[\'tag4\', \'tag5:{cls.name}\']", '
-            'prefix="' + __name__ + '.<lambda>", timeout=500>'
-        )
-
-        self.assertEqual(
-            repr(User.class_method_default_cache_key),
-            '<Cached: '
-            'callable="' + __name__ + '.User.class_method_default_cache_key", '
-            'cache_key="easy_cache.core.Cached.create_cache_key", timeout=DEFAULT_TIMEOUT>'
-        )
-
-        self.assertEqual(
-            repr(User.static_method),
-            '<TaggedCached: '
-            'callable="' + __name__ + '.User.static_method", '
-            'cache_key="{hg}:{hg}:{test}", tags="()", '
-            'prefix="пользователь", timeout=DEFAULT_TIMEOUT>'
-        )
-
-        self.assertEqual(
-            repr(User.property_no_tags),
-            '<Cached: '
-            'callable="' + __name__ + '.User.property_no_tags", '
-            'cache_key="static_key", timeout=DEFAULT_TIMEOUT>'
-        )
-
-        self.assertEqual(
-            repr(User.instance_method_custom_tags),
-            '<TaggedCached: '
-            'callable="' + __name__ + '.User.instance_method_custom_tags", '
-            'cache_key="{a}:{b}", tags="' + __name__ + '.generate_custom_tags", '
-            'prefix="None", timeout=DEFAULT_TIMEOUT>'
-        )
-
-        self.assertEqual(
-            repr(ordinal_func),
-            '<TaggedCached: '
-            'callable="' + __name__ + '.ordinal_func", '
-            'cache_key="{kwargs[a]}:{kwargs[b]}", tags="()", '
-            'prefix="пользователь", timeout=DEFAULT_TIMEOUT>'
-        )
-
-    @skipIf(six.PY2, 'This test should only be executed in Python 3')
-    def test_class_repr_py3(self):
+    def test_class_repr(self):
         self.assertEqual(
             repr(User.class_method_full_spec),
             '<TaggedCached: '
