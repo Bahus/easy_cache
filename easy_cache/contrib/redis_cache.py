@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import six
 import json
 from easy_cache import create_cache_key
 from easy_cache.abc import AbstractCacheInstance
@@ -24,7 +23,7 @@ class RedisCacheInstance(AbstractCacheInstance):
         return create_cache_key(self.prefix, key)
 
     def load_value(self, value):
-        if isinstance(value, six.binary_type):
+        if isinstance(value, bytes):
             value = force_text(value)
         elif value is None:
             return value
@@ -32,7 +31,7 @@ class RedisCacheInstance(AbstractCacheInstance):
 
     # noinspection PyMethodMayBeStatic
     def dump_value(self, value):
-        if isinstance(value, six.binary_type):
+        if isinstance(value, bytes):
             return value
 
         return force_binary(self.serializer.dumps(value))
@@ -74,7 +73,7 @@ class RedisCacheInstance(AbstractCacheInstance):
         pipe = self.client.pipeline()
         pipe.mset(
             {self.make_key(key): self.dump_value(value)
-             for key, value in six.iteritems(data_dict)}
+             for key, value in iter(data_dict.items())}
         )
 
         if timeout:

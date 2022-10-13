@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, absolute_import
 from abc import ABCMeta, abstractmethod
-import six
 
 from easy_cache.core import DEFAULT_TIMEOUT, NOT_FOUND
 
 
-@six.add_metaclass(ABCMeta)
-class AbstractCacheInstance(object):
+class AbstractCacheInstance(object, metaclass=ABCMeta):
     """All custom cache instances (clients) should
     inherit this class.
     """
