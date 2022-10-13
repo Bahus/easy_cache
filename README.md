@@ -12,8 +12,8 @@ The main idea of this package: you don't need to touch any existing function cod
 
 Library was tested in the following environments:
 
-* Python 2.7, 3.5, 3.6
-* Django 1.8, 1.11, >=2.0.0
+* Python 3.7, 3.8, 3.9, 3.10
+* Django >=2.0.0
 
 Feel free to try it in yours, but it's not guaranteed it will work. Submit an issue if you think it should.
 

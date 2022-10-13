@@ -96,7 +96,6 @@ class CacheProxy(object):
     @property
     def is_redis(self):
         try:
-            # noinspection PyUnresolvedReferences
             from django_redis.client import DefaultClient
         except ImportError:
             return False
@@ -410,15 +409,6 @@ class ClassCachedDecoratorTest(TestCase):
         a, b, c = items[:3]
 
         result = process_args(a, b, c)
-        # argspec = getargspec(method.function)
-        # start_arg_idx = 0
-        # if len(argspec.args) == 4:
-        #     start_arg_idx = 1
-        # params = {
-        #     argspec.args[start_arg_idx]: a,
-        #     argspec.args[start_arg_idx + 1]: b,
-        #     argspec.args[start_arg_idx + 2]: c,
-        # }
         self.assertEqual(method(a, b, c), result)
         self.cache.assert_called_once_with(result)
         self.cache.reset_mock()
@@ -966,7 +956,7 @@ class DjangoLocMemCacheTest(ClassCachedDecoratorTest, SimpleTestCase):
 @override_settings(
     CACHES={
         'default': {
-            'BACKEND': "django.core.cache.backends.memcached.MemcachedCache",
+            'BACKEND': 'django.core.cache.backends.memcached.MemcachedCache',
             'LOCATION': MEMCACHED_HOST,
             'KEY_PREFIX': 'memcached',
         }

@@ -1,6 +1,4 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, print_function
-
 import math
 from contextlib import contextmanager
 from timeit import default_timer
@@ -29,7 +27,7 @@ settings.configure(
             'KEY_PREFIX': 'custom_prefix',
         },
         'memcached': {
-            'BACKEND': "django.core.cache.backends.memcached.PyMemcacheCache",
+            'BACKEND': 'django.core.cache.backends.memcached.PyMemcacheCache',
             'LOCATION': MEMCACHED_HOST,
             'KEY_PREFIX': 'memcached',
         },
